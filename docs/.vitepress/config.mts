@@ -2,7 +2,7 @@ import { defineConfig } from "vitepress";
 
 export default defineConfig({
   title: "shardd",
-  description: "Geo-aware edge-routed CRDT ledger infrastructure.",
+  description: "Balance infrastructure with public regional edges, private shard replication, and a hosted control plane.",
   base: "/",
   cleanUrls: true,
   head: [
@@ -19,6 +19,7 @@ export default defineConfig({
   themeConfig: {
     logo: "/logo-mark.svg",
     nav: [
+      { text: "Login", link: "https://app.shardd.xyz" },
       { text: "Docs", link: "/guide/quickstart" },
       { text: "Architecture", link: "/guide/architecture" },
       { text: "GitHub", link: "https://github.com/sssemil/shardd" },

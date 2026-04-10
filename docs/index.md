@@ -3,38 +3,48 @@ layout: home
 
 hero:
   name: shardd
-  text: Global edge routing for a private shard mesh.
-  tagline: Keep stateful full nodes private, route developers through named public edges, and let the edge choose the best full node in real time.
+  text: Balance infrastructure for a globally routed product.
+  tagline: Market on the root domain, send operators to the app, and route developer traffic through smart regional edges while the stateful shard mesh stays private.
   image:
     src: /logo-mark.svg
     alt: shardd mark
   actions:
     - theme: brand
+      text: Log in
+      link: https://app.shardd.xyz
+    - theme: alt
       text: Read the docs
       link: /guide/quickstart
     - theme: alt
-      text: View core repo
+      text: View GitHub
       link: https://github.com/sssemil/shardd
 
 features:
-  - title: Private full-node mesh
-    details: Full nodes stay on a private libp2p cluster key and never become a public developer surface.
-  - title: Public regional edges
-    details: Developers hit named HTTPS edges such as use1.api.dev.shardd.xyz and can discover healthier peers from there.
-  - title: Smart edge routing
-    details: Each edge keeps a live view of mesh health and chooses the best matching full node by readiness, sync state, and latency.
-  - title: Plain client transport
-    details: Curl, bash, Python, TypeScript, and Rust all work over standard HTTPS with the same public edge contract.
+  - title: Product on the root domain
+    details: "shardd.xyz is the public product surface, with docs, onboarding, and entry points into the hosted control plane."
+  - title: Operators on app.shardd.xyz
+    details: "The dashboard, API keys, bucket scopes, and account controls live behind a dedicated app subdomain."
+  - title: Smart public edges
+    details: "Developers can start from named regional HTTPS edges and let the SDK discover and choose the best live edge automatically."
+  - title: Private shard mesh
+    details: "Full nodes replicate and converge privately, while public traffic stays on the edge tier instead of touching stateful internals."
 ---
 
-## Why this shape
+## The shape
 
-`shardd` splits ingress from state:
+`shardd` keeps product, control plane, and state separation clean:
 
-- public traffic terminates on edge gateways
-- the edge authenticates the request
-- the edge inspects the live mesh and forwards to the best full node
+- `shardd.xyz` explains the product and hosts the docs
+- `app.shardd.xyz` is where operators log in and manage access
+- public API traffic goes to regional edges
+- each edge authenticates, inspects live mesh health, and forwards to the best full node
 - full nodes replicate privately across regions
 
-That keeps the correctness-critical layer small and private while giving
-developers a normal HTTPS product surface.
+That gives developers a normal HTTPS product surface without exposing the
+correctness-critical layer directly.
+
+## Start here
+
+- Read the docs: [Quickstart](/guide/quickstart)
+- Explore public client bootstrapping: [Public Edge Clients](/guide/public-edge-clients)
+- Log in to the control plane: `https://app.shardd.xyz`
