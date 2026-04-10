@@ -1,50 +1,49 @@
 ---
 layout: home
 
+title: shardd
+titleTemplate: Edge-routed storage over a private shard mesh
+
 hero:
-  name: shardd
-  text: Balance infrastructure for a globally routed product.
-  tagline: Market on the root domain, send operators to the app, and route developer traffic through smart regional edges while the stateful shard mesh stays private.
-  image:
-    src: /logo-mark.svg
-    alt: shardd mark
+  name: SHARDED STORAGE
+  text: One SDK call. Every region.
+  tagline: Named HTTPS edges handle TLS, auth, and routing. A private shard mesh replicates underneath — stateful internals never touch the public internet.
   actions:
     - theme: brand
-      text: Log in
+      text: Log in →
       link: https://app.shardd.xyz
     - theme: alt
       text: Read the docs
       link: /guide/quickstart
     - theme: alt
-      text: View GitHub
+      text: GitHub
       link: https://github.com/sssemil/shardd
 
 features:
-  - title: Product on the root domain
-    details: "shardd.xyz is the public product surface, with docs, onboarding, and entry points into the hosted control plane."
-  - title: Operators on app.shardd.xyz
-    details: "The dashboard, API keys, bucket scopes, and account controls live behind a dedicated app subdomain."
-  - title: Smart public edges
-    details: "Developers can start from named regional HTTPS edges and let the SDK discover and choose the best live edge automatically."
+  - title: Regional HTTPS edges
+    details: Named endpoints per region handle TLS, auth, and routing. Nothing exotic — just HTTPS your SDK already speaks.
+  - title: Live edge discovery
+    details: The SDK inspects mesh health and picks the fastest healthy edge on every call. No DNS tricks, no manual failover.
   - title: Private shard mesh
-    details: "Full nodes replicate and converge privately, while public traffic stays on the edge tier instead of touching stateful internals."
+    details: Replication and consensus run behind the edge tier. Stateful internals stay off the public internet.
+  - title: Hosted control plane
+    details: Keys, scopes, and bucket access live at app.shardd.xyz. Operators manage, developers consume.
 ---
 
-## The shape
+## How it fits together
 
-`shardd` keeps product, control plane, and state separation clean:
+```text
+  your-app  ──►  edge.<region>.shardd.xyz  ──►  shard mesh (private)
+                       │
+                       └── TLS · auth · routing · health-aware
+```
 
-- `shardd.xyz` explains the product and hosts the docs
-- `app.shardd.xyz` is where operators log in and manage access
-- public API traffic goes to regional edges
-- each edge authenticates, inspects live mesh health, and forwards to the best full node
-- full nodes replicate privately across regions
-
-That gives developers a normal HTTPS product surface without exposing the
-correctness-critical layer directly.
+Public traffic stays on the edge tier. The correctness-critical layer
+replicates privately across regions and never terminates a public TLS
+connection.
 
 ## Start here
 
-- Read the docs: [Quickstart](/guide/quickstart)
-- Explore public client bootstrapping: [Public Edge Clients](/guide/public-edge-clients)
-- Log in to the control plane: `https://app.shardd.xyz`
+- [Quickstart](/guide/quickstart) — first request in a minute
+- [Public Edge Clients](/guide/public-edge-clients) — SDK bootstrapping
+- [Architecture](/guide/architecture) — control plane, edges, mesh
