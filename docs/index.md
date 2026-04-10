@@ -4,7 +4,7 @@ pageClass: sd-home-page
 sidebar: false
 aside: false
 navbar: true
-title: shardd — storage that routes itself
+title: shardd — balances at the edge
 titleTemplate: shardd
 ---
 

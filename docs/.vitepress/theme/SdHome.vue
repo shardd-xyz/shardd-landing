@@ -49,23 +49,23 @@ const fallbackEdges: EdgeSummary[] = [
 const features = [
   {
     num: "01",
-    title: "Regional HTTPS edges",
-    body: "Named endpoints per region handle TLS, auth, and routing. Just HTTPS your SDK already speaks.",
+    title: "Credit, debit, hold",
+    body: "Every event is atomic. Idempotent writes dedupe duplicates. Holds reserve balance before committing a charge, with automatic expiry.",
   },
   {
     num: "02",
-    title: "Live edge discovery",
-    body: "The SDK inspects mesh health and picks the fastest edge on every call. No DNS tricks.",
+    title: "Write from any region",
+    body: "POST to the nearest edge. Events replicate across regions via libp2p gossipsub. Your meter runs at the speed of your API, not a central database.",
   },
   {
     num: "03",
-    title: "Private shard mesh",
-    body: "Replication and consensus run behind the edges. Stateful internals stay off the public internet.",
+    title: "No leader, no consensus",
+    body: "Every node is a full replica. No single primary to fail over, no quorum to wait on, no consensus protocol to outgrow. Regions converge asynchronously.",
   },
   {
     num: "04",
-    title: "Hosted control plane",
-    body: "Keys, scopes, and bucket access at app.shardd.xyz. Operators manage, developers consume.",
+    title: "Built for metered billing",
+    body: "LLM tokens, API credits, prepaid accounts. Append-only event stream per (bucket, account) with void and hold_release for corrections. Bounded sync lag, auditable forever.",
   },
 ];
 
@@ -199,14 +199,16 @@ function regionLatency(e: EdgeSummary): string {
         </div>
 
         <h1 class="sd-title" data-delay="1">
-          Storage that<br />routes itself.
+          Balances<br />at the edge.
         </h1>
 
         <div class="sd-hero-row">
           <div class="sd-hero-col" data-delay="2">
             <p class="sd-tagline">
-              Regional HTTPS edges, a private shard mesh, and one SDK call
-              that picks the fastest live edge.
+              A distributed balance ledger for per-request billing. Credit,
+              debit, and hold accounts from any region — no central database,
+              no consensus to wait on, no bottleneck between your users and
+              the meter.
             </p>
             <div class="sd-actions">
               <a class="sd-btn sd-btn-primary" href="https://app.shardd.xyz">
@@ -274,8 +276,10 @@ function regionLatency(e: EdgeSummary): string {
     <section class="sd-bento">
       <div class="sd-section-inner">
         <div class="sd-section-head">
-          <span class="sd-section-label">// what you get</span>
-          <h2 class="sd-section-title">Four pieces. Zero glue code.</h2>
+          <span class="sd-section-label">// the shape</span>
+          <h2 class="sd-section-title">
+            Write from any region. Read from any region.
+          </h2>
         </div>
         <div class="sd-bento-grid">
           <article
@@ -301,9 +305,10 @@ function regionLatency(e: EdgeSummary): string {
         <div class="sd-cta-inner">
           <div class="sd-cta-text">
             <span class="sd-section-label">// start here</span>
-            <h2 class="sd-cta-title">Ship in a minute.</h2>
+            <h2 class="sd-cta-title">POST /events.</h2>
             <p class="sd-cta-sub">
-              Bootstrap against a public edge. No credit card.
+              Hit a regional edge with an API key and a credit or debit.
+              Read balances from the same edge, or any other. That's it.
             </p>
           </div>
           <div class="sd-cta-actions">

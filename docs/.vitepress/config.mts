@@ -2,7 +2,7 @@ import { defineConfig } from "vitepress";
 
 export default defineConfig({
   title: "shardd",
-  description: "Storage that routes itself. Named HTTPS edges over a private shard replication mesh.",
+  description: "A distributed balance ledger for per-request billing. Credit, debit, and hold accounts from any region — no central database.",
   base: "/",
   cleanUrls: true,
   appearance: "force-dark",
@@ -17,12 +17,12 @@ export default defineConfig({
       },
     ],
     ["meta", { name: "theme-color", content: "#0a0a0a" }],
-    ["meta", { property: "og:title", content: "shardd — storage that routes itself" }],
+    ["meta", { property: "og:title", content: "shardd — balances at the edge" }],
     [
       "meta",
       {
         property: "og:description",
-        content: "Named HTTPS edges in every region over a private shard replication mesh.",
+        content: "A distributed balance ledger for per-request billing. Credit, debit, and hold accounts from any region — no central database.",
       },
     ],
   ],
@@ -36,7 +36,7 @@ export default defineConfig({
     ],
     socialLinks: [{ icon: "github", link: "https://github.com/sssemil/shardd" }],
     footer: {
-      message: "Storage that routes itself.",
+      message: "Balance ledger at the edge.",
       copyright: "© 2026 shardd",
     },
     sidebar: [
