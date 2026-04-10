@@ -1,11 +1,9 @@
 import { defineConfig } from "vitepress";
 
-const base = process.env.SHARDD_SITE_BASE || "/";
-
 export default defineConfig({
   title: "shardd",
   description: "Geo-aware edge-routed CRDT ledger infrastructure.",
-  base,
+  base: "/",
   cleanUrls: true,
   head: [
     ["meta", { name: "theme-color", content: "#12202c" }],

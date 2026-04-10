@@ -17,8 +17,6 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    env:
-      SHARDD_SITE_BASE: /shardd-landing/
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
