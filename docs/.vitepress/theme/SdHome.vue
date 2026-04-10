@@ -1,20 +1,49 @@
 <script setup lang="ts">
-import { ref, onMounted } from "vue";
+import { ref, onMounted, onBeforeUnmount, computed } from "vue";
 
-type Region = {
-  code: string;
-  area: string;
-  city: string;
-  p50: string;
+// Shape matches libs/types::PublicEdgeSummary
+type EdgeSummary = {
+  edge_id: string;
+  region: string;
+  base_url: string;
+  health_url?: string;
+  reachable: boolean;
+  ready: boolean;
+  healthy_nodes?: number | null;
+  best_node_rtt_ms?: number | null;
+  sync_gap?: number | null;
+  overloaded?: boolean | null;
 };
 
-const regions: Region[] = [
-  { code: "fra1", area: "eu-central", city: "frankfurt", p50: "9" },
-  { code: "lhr1", area: "eu-west", city: "london", p50: "11" },
-  { code: "iad1", area: "us-east", city: "virginia", p50: "12" },
-  { code: "sfo1", area: "us-west", city: "san francisco", p50: "18" },
-  { code: "sin1", area: "ap-southeast", city: "singapore", p50: "24" },
-  { code: "nrt1", area: "ap-northeast", city: "tokyo", p50: "31" },
+type EdgeDirectory = {
+  observed_at_unix_ms: number;
+  edges: EdgeSummary[];
+};
+
+// Static fallback matches the deployed topology so the SSR HTML looks
+// sensible before hydration and when the live fetch fails.
+const fallbackEdges: EdgeSummary[] = [
+  {
+    edge_id: "use1",
+    region: "us-east-1",
+    base_url: "https://use1.shardd.xyz",
+    reachable: false,
+    ready: false,
+  },
+  {
+    edge_id: "euc1",
+    region: "eu-central-1",
+    base_url: "https://euc1.shardd.xyz",
+    reachable: false,
+    ready: false,
+  },
+  {
+    edge_id: "ape1",
+    region: "ap-east-1",
+    base_url: "https://ape1.shardd.xyz",
+    reachable: false,
+    ready: false,
+  },
 ];
 
 const features = [
@@ -40,12 +69,114 @@ const features = [
   },
 ];
 
+// Reactive state
 const loaded = ref(false);
+const edges = ref<EdgeSummary[]>(fallbackEdges);
+const meshState = ref<"loading" | "live" | "offline">("loading");
+let refetchTimer: number | undefined;
+let currentAbort: AbortController | undefined;
+
+const BOOTSTRAP_URL = "https://api.shardd.xyz/gateway/edges";
+const FETCH_TIMEOUT_MS = 3500;
+const REFETCH_INTERVAL_MS = 15000;
+
+async function fetchWithTimeout(url: string): Promise<Response | null> {
+  currentAbort?.abort();
+  const ctrl = new AbortController();
+  currentAbort = ctrl;
+  const timer = window.setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
+  try {
+    return await fetch(url, {
+      method: "GET",
+      signal: ctrl.signal,
+      mode: "cors",
+      cache: "no-store",
+      credentials: "omit",
+      headers: { accept: "application/json" },
+    });
+  } catch {
+    return null;
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
+async function refreshEdges() {
+  const res = await fetchWithTimeout(BOOTSTRAP_URL);
+  if (!res || !res.ok) {
+    meshState.value = "offline";
+    return;
+  }
+  try {
+    const data = (await res.json()) as EdgeDirectory;
+    if (!Array.isArray(data.edges) || data.edges.length === 0) {
+      meshState.value = "offline";
+      return;
+    }
+    // Stable sort by edge_id so re-fetches don't shuffle the list.
+    edges.value = [...data.edges].sort((a, b) =>
+      a.edge_id.localeCompare(b.edge_id),
+    );
+    meshState.value = "live";
+  } catch {
+    meshState.value = "offline";
+  }
+}
+
 onMounted(() => {
   requestAnimationFrame(() => {
     loaded.value = true;
   });
+  refreshEdges();
+  refetchTimer = window.setInterval(refreshEdges, REFETCH_INTERVAL_MS);
 });
+
+onBeforeUnmount(() => {
+  if (refetchTimer !== undefined) window.clearInterval(refetchTimer);
+  currentAbort?.abort();
+});
+
+// Derived UI state
+const healthyCount = computed(
+  () =>
+    edges.value.filter((e) => e.reachable && e.ready && !e.overloaded).length,
+);
+const totalCount = computed(() => edges.value.length);
+
+const meshLabel = computed(() => {
+  switch (meshState.value) {
+    case "live":
+      return "live";
+    case "offline":
+      return "offline";
+    default:
+      return "resolving";
+  }
+});
+
+const meshStatusText = computed(() => {
+  switch (meshState.value) {
+    case "live":
+      return "mesh · live";
+    case "offline":
+      return "mesh · offline";
+    default:
+      return "mesh · resolving";
+  }
+});
+
+function regionStatus(e: EdgeSummary): "healthy" | "degraded" | "offline" {
+  if (!e.reachable || !e.ready) return "offline";
+  if (e.overloaded) return "degraded";
+  return "healthy";
+}
+
+function regionLatency(e: EdgeSummary): string {
+  if (e.best_node_rtt_ms === null || e.best_node_rtt_ms === undefined) {
+    return "—";
+  }
+  return String(Math.round(e.best_node_rtt_ms));
+}
 </script>
 
 <template>
@@ -56,11 +187,11 @@ onMounted(() => {
     <section class="sd-hero">
       <div class="sd-hero-bg" aria-hidden="true"></div>
       <div class="sd-hero-inner">
-        <div class="sd-meta" data-delay="0">
+        <div class="sd-meta" data-delay="0" :data-state="meshState">
           <span class="sd-pulse">
             <span class="sd-pulse-dot"></span>
           </span>
-          <span class="sd-meta-text">status · operational · 6 regions</span>
+          <span class="sd-meta-text">{{ meshStatusText }}</span>
         </div>
 
         <h1 class="sd-title" data-delay="1">
@@ -84,30 +215,51 @@ onMounted(() => {
             </div>
           </div>
 
-          <aside class="sd-regions" data-delay="3" aria-label="Edge mesh status">
+          <aside
+            class="sd-regions"
+            data-delay="3"
+            :data-state="meshState"
+            aria-label="Edge mesh status"
+          >
             <header class="sd-regions-head">
               <span class="sd-regions-label">edge mesh</span>
-              <span class="sd-regions-count">6 / 6</span>
+              <span class="sd-regions-count">
+                <span class="sd-regions-num">{{ healthyCount }}</span>
+                /
+                <span class="sd-regions-num">{{ totalCount }}</span>
+                <span class="sd-regions-state">· {{ meshLabel }}</span>
+              </span>
             </header>
             <ul class="sd-regions-list">
-              <li v-for="r in regions" :key="r.code" class="sd-region">
+              <li
+                v-for="e in edges"
+                :key="e.edge_id"
+                class="sd-region"
+                :data-status="regionStatus(e)"
+              >
                 <div class="sd-region-left">
                   <span class="sd-pulse sd-pulse-sm">
                     <span class="sd-pulse-dot"></span>
                   </span>
                   <div class="sd-region-name">
-                    <div class="sd-region-code">{{ r.code }}</div>
-                    <div class="sd-region-city">{{ r.area }} · {{ r.city }}</div>
+                    <div class="sd-region-code">{{ e.edge_id }}</div>
+                    <div class="sd-region-city">{{ e.region }}</div>
                   </div>
                 </div>
                 <div class="sd-region-lat">
-                  <span class="sd-region-num">{{ r.p50 }}</span>
+                  <span class="sd-region-num">{{ regionLatency(e) }}</span>
                   <span class="sd-region-unit">ms</span>
                 </div>
               </li>
             </ul>
             <footer class="sd-regions-foot">
-              p50 · last 60s · client pov
+              <span v-if="meshState === 'live'">
+                live · /gateway/edges · refreshes every 15s
+              </span>
+              <span v-else-if="meshState === 'offline'">
+                mesh unreachable · retrying
+              </span>
+              <span v-else>resolving bootstrap · api.shardd.xyz</span>
             </footer>
           </aside>
         </div>

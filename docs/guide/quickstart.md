@@ -4,20 +4,20 @@
 
 Start with one or more bootstrap edge URLs:
 
-- `https://use1.api.dev.shardd.xyz`
-- `https://ape1.api.dev.shardd.xyz`
-- `https://euc1.api.dev.shardd.xyz`
+- `https://use1.api.shardd.xyz`
+- `https://ape1.api.shardd.xyz`
+- `https://euc1.api.shardd.xyz`
 
 Each request uses a bearer API key:
 
 ```bash
-curl -sS https://use1.api.dev.shardd.xyz/gateway/health
+curl -sS https://use1.api.shardd.xyz/gateway/health
 ```
 
 Write an event:
 
 ```bash
-curl -sS https://use1.api.dev.shardd.xyz/events \
+curl -sS https://use1.api.shardd.xyz/events \
   -H "Authorization: Bearer $SHARDD_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
@@ -33,7 +33,7 @@ Read balances:
 
 ```bash
 curl -sS \
-  "https://use1.api.dev.shardd.xyz/balances?owner=dev_123&bucket=orders" \
+  "https://use1.api.shardd.xyz/balances?owner=dev_123&bucket=orders" \
   -H "Authorization: Bearer $SHARDD_API_KEY"
 ```
 

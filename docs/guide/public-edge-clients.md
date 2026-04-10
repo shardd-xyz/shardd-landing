@@ -37,8 +37,8 @@ Example response:
     {
       "edge_id": "use1",
       "region": "us-east-1",
-      "base_url": "https://use1.api.dev.shardd.xyz",
-      "health_url": "https://use1.api.dev.shardd.xyz/gateway/health",
+      "base_url": "https://use1.api.shardd.xyz",
+      "health_url": "https://use1.api.shardd.xyz/gateway/health",
       "reachable": true,
       "ready": true,
       "healthy_nodes": 3,
