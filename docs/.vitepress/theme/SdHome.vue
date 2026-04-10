@@ -26,21 +26,21 @@ const fallbackEdges: EdgeSummary[] = [
   {
     edge_id: "use1",
     region: "us-east-1",
-    base_url: "https://use1.shardd.xyz",
+    base_url: "https://use1.api.shardd.xyz",
     reachable: false,
     ready: false,
   },
   {
     edge_id: "euc1",
     region: "eu-central-1",
-    base_url: "https://euc1.shardd.xyz",
+    base_url: "https://euc1.api.shardd.xyz",
     reachable: false,
     ready: false,
   },
   {
     edge_id: "ape1",
     region: "ap-east-1",
-    base_url: "https://ape1.shardd.xyz",
+    base_url: "https://ape1.api.shardd.xyz",
     reachable: false,
     ready: false,
   },
@@ -76,50 +76,54 @@ const meshState = ref<"loading" | "live" | "offline">("loading");
 let refetchTimer: number | undefined;
 let currentAbort: AbortController | undefined;
 
-const BOOTSTRAP_URL = "https://api.shardd.xyz/gateway/edges";
+// No central api.shardd.xyz — the landing demos the same behavior the SDK
+// uses: race every known regional edge, keep the directory from whichever
+// responds first.
+const BOOTSTRAP_URLS = [
+  "https://use1.api.shardd.xyz/gateway/edges",
+  "https://euc1.api.shardd.xyz/gateway/edges",
+  "https://ape1.api.shardd.xyz/gateway/edges",
+];
 const FETCH_TIMEOUT_MS = 3500;
 const REFETCH_INTERVAL_MS = 15000;
 
-async function fetchWithTimeout(url: string): Promise<Response | null> {
+async function fetchDirectory(
+  url: string,
+  signal: AbortSignal,
+): Promise<EdgeDirectory> {
+  const res = await fetch(url, {
+    method: "GET",
+    signal,
+    mode: "cors",
+    cache: "no-store",
+    credentials: "omit",
+    headers: { accept: "application/json" },
+  });
+  if (!res.ok) throw new Error(`${url}: ${res.status}`);
+  const data = (await res.json()) as EdgeDirectory;
+  if (!Array.isArray(data.edges) || data.edges.length === 0) {
+    throw new Error(`${url}: empty directory`);
+  }
+  return data;
+}
+
+async function refreshEdges() {
   currentAbort?.abort();
   const ctrl = new AbortController();
   currentAbort = ctrl;
   const timer = window.setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
   try {
-    return await fetch(url, {
-      method: "GET",
-      signal: ctrl.signal,
-      mode: "cors",
-      cache: "no-store",
-      credentials: "omit",
-      headers: { accept: "application/json" },
-    });
-  } catch {
-    return null;
-  } finally {
-    window.clearTimeout(timer);
-  }
-}
-
-async function refreshEdges() {
-  const res = await fetchWithTimeout(BOOTSTRAP_URL);
-  if (!res || !res.ok) {
-    meshState.value = "offline";
-    return;
-  }
-  try {
-    const data = (await res.json()) as EdgeDirectory;
-    if (!Array.isArray(data.edges) || data.edges.length === 0) {
-      meshState.value = "offline";
-      return;
-    }
-    // Stable sort by edge_id so re-fetches don't shuffle the list.
+    const data = await Promise.any(
+      BOOTSTRAP_URLS.map((u) => fetchDirectory(u, ctrl.signal)),
+    );
     edges.value = [...data.edges].sort((a, b) =>
       a.edge_id.localeCompare(b.edge_id),
     );
     meshState.value = "live";
   } catch {
     meshState.value = "offline";
+  } finally {
+    window.clearTimeout(timer);
   }
 }
 
@@ -254,12 +258,12 @@ function regionLatency(e: EdgeSummary): string {
             </ul>
             <footer class="sd-regions-foot">
               <span v-if="meshState === 'live'">
-                live · /gateway/edges · refreshes every 15s
+                live · racing /gateway/edges · refresh 15s
               </span>
               <span v-else-if="meshState === 'offline'">
                 mesh unreachable · retrying
               </span>
-              <span v-else>resolving bootstrap · api.shardd.xyz</span>
+              <span v-else>resolving · racing regional edges</span>
             </footer>
           </aside>
         </div>
