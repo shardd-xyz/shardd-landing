@@ -2,7 +2,7 @@ import { defineConfig } from "vitepress";
 
 export default defineConfig({
   title: "shardd",
-  description: "Edge-routed storage over a private shard replication mesh.",
+  description: "Storage that routes itself. Named HTTPS edges over a private shard replication mesh.",
   base: "/",
   cleanUrls: true,
   appearance: "force-dark",
@@ -13,11 +13,11 @@ export default defineConfig({
       "link",
       {
         rel: "stylesheet",
-        href: "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap",
+        href: "https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap",
       },
     ],
     ["meta", { name: "theme-color", content: "#0a0a0a" }],
-    ["meta", { property: "og:title", content: "shardd — edge-routed storage" }],
+    ["meta", { property: "og:title", content: "shardd — storage that routes itself" }],
     [
       "meta",
       {
@@ -36,7 +36,7 @@ export default defineConfig({
     ],
     socialLinks: [{ icon: "github", link: "https://github.com/sssemil/shardd" }],
     footer: {
-      message: "Edge-routed storage over a private shard mesh.",
+      message: "Storage that routes itself.",
       copyright: "© 2026 shardd",
     },
     sidebar: [
