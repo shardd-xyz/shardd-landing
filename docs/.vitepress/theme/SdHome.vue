@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount, computed } from "vue";
 
-// Shape matches libs/types::PublicEdgeSummary
+// Shape matches libs/types::PublicEdgeSummary plus browser-measured RTT.
 type EdgeSummary = {
   edge_id: string;
   region: string;
@@ -13,11 +13,20 @@ type EdgeSummary = {
   best_node_rtt_ms?: number | null;
   sync_gap?: number | null;
   overloaded?: boolean | null;
+  client_rtt_ms?: number | null;
 };
 
-type EdgeDirectory = {
+type EdgeHealth = {
   observed_at_unix_ms: number;
-  edges: EdgeSummary[];
+  edge_id?: string | null;
+  region?: string | null;
+  base_url?: string | null;
+  ready: boolean;
+  discovered_nodes: number;
+  healthy_nodes: number;
+  best_node_rtt_ms?: number | null;
+  sync_gap?: number | null;
+  overloaded?: boolean | null;
 };
 
 // Static fallback matches the deployed topology so the SSR HTML looks
@@ -72,26 +81,23 @@ const features = [
 // Reactive state
 const loaded = ref(false);
 const edges = ref<EdgeSummary[]>(fallbackEdges);
+const latencyHistory = ref<Record<string, number[]>>({});
 const meshState = ref<"loading" | "live" | "offline">("loading");
 let refetchTimer: number | undefined;
 let currentAbort: AbortController | undefined;
 
-// No central api.shardd.xyz — the landing demos the same behavior the SDK
-// uses: race every known regional edge, keep the directory from whichever
-// responds first.
-const BOOTSTRAP_URLS = [
-  "https://use1.api.shardd.xyz/gateway/edges",
-  "https://euc1.api.shardd.xyz/gateway/edges",
-  "https://ape1.api.shardd.xyz/gateway/edges",
-];
 const FETCH_TIMEOUT_MS = 3500;
-const REFETCH_INTERVAL_MS = 15000;
+const REFETCH_INTERVAL_MS = 2500;
+const MAX_LATENCY_SAMPLES = 24;
+const SPARKLINE_WIDTH = 56;
+const SPARKLINE_HEIGHT = 16;
 
-async function fetchDirectory(
-  url: string,
+async function fetchEdgeHealth(
+  edge: EdgeSummary,
   signal: AbortSignal,
-): Promise<EdgeDirectory> {
-  const res = await fetch(url, {
+): Promise<EdgeSummary> {
+  const startedAt = window.performance.now();
+  const res = await fetch(`${edge.base_url}/gateway/health`, {
     method: "GET",
     signal,
     mode: "cors",
@@ -99,12 +105,44 @@ async function fetchDirectory(
     credentials: "omit",
     headers: { accept: "application/json" },
   });
-  if (!res.ok) throw new Error(`${url}: ${res.status}`);
-  const data = (await res.json()) as EdgeDirectory;
-  if (!Array.isArray(data.edges) || data.edges.length === 0) {
-    throw new Error(`${url}: empty directory`);
+  if (!res.ok) throw new Error(`${edge.base_url}: ${res.status}`);
+  const health = (await res.json()) as EdgeHealth;
+  const finishedAt = window.performance.now();
+  return {
+    edge_id: health.edge_id || edge.edge_id,
+    region: health.region || edge.region,
+    base_url: health.base_url || edge.base_url,
+    reachable: true,
+    ready: health.ready,
+    healthy_nodes: health.healthy_nodes,
+    best_node_rtt_ms: health.best_node_rtt_ms,
+    sync_gap: health.sync_gap,
+    overloaded: health.overloaded,
+    client_rtt_ms: Math.max(finishedAt - startedAt, 0),
+  };
+}
+
+function offlineEdge(edge: EdgeSummary): EdgeSummary {
+  return {
+    ...edge,
+    reachable: false,
+    ready: false,
+    healthy_nodes: null,
+    best_node_rtt_ms: null,
+    sync_gap: null,
+    overloaded: null,
+    client_rtt_ms: null,
+  };
+}
+
+function recordLatencySamples(nextEdges: EdgeSummary[]) {
+  const nextHistory = { ...latencyHistory.value };
+  for (const edge of nextEdges) {
+    if (edge.client_rtt_ms === null || edge.client_rtt_ms === undefined) continue;
+    const samples = [...(nextHistory[edge.edge_id] || []), edge.client_rtt_ms];
+    nextHistory[edge.edge_id] = samples.slice(-MAX_LATENCY_SAMPLES);
   }
-  return data;
+  latencyHistory.value = nextHistory;
 }
 
 async function refreshEdges() {
@@ -113,14 +151,23 @@ async function refreshEdges() {
   currentAbort = ctrl;
   const timer = window.setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
   try {
-    const data = await Promise.any(
-      BOOTSTRAP_URLS.map((u) => fetchDirectory(u, ctrl.signal)),
+    const results = await Promise.all(
+      fallbackEdges.map(async (edge) => {
+        try {
+          return await fetchEdgeHealth(edge, ctrl.signal);
+        } catch {
+          return offlineEdge(edge);
+        }
+      }),
     );
-    edges.value = [...data.edges].sort((a, b) =>
+    const nextEdges = [...results].sort((a, b) =>
       a.edge_id.localeCompare(b.edge_id),
     );
-    meshState.value = "live";
+    edges.value = nextEdges;
+    recordLatencySamples(nextEdges);
+    meshState.value = nextEdges.some((edge) => edge.reachable) ? "live" : "offline";
   } catch {
+    edges.value = fallbackEdges.map((edge) => offlineEdge(edge));
     meshState.value = "offline";
   } finally {
     window.clearTimeout(timer);
@@ -176,10 +223,47 @@ function regionStatus(e: EdgeSummary): "healthy" | "degraded" | "offline" {
 }
 
 function regionLatency(e: EdgeSummary): string {
-  if (e.best_node_rtt_ms === null || e.best_node_rtt_ms === undefined) {
+  if (e.client_rtt_ms === null || e.client_rtt_ms === undefined) {
     return "—";
   }
-  return String(Math.round(e.best_node_rtt_ms));
+  if (e.client_rtt_ms > 0 && e.client_rtt_ms < 1) {
+    return "<1";
+  }
+  return String(Math.round(e.client_rtt_ms));
+}
+
+function regionLatencyUnit(e: EdgeSummary): string {
+  return e.client_rtt_ms === null || e.client_rtt_ms === undefined ? "" : "ms";
+}
+
+function regionMeshLatency(e: EdgeSummary): string | null {
+  if (e.best_node_rtt_ms === null || e.best_node_rtt_ms === undefined) {
+    return null;
+  }
+  if (e.best_node_rtt_ms === 0) {
+    return "mesh <1 ms";
+  }
+  return `mesh ${Math.round(e.best_node_rtt_ms)} ms`;
+}
+
+function regionLatencySparkline(edge: EdgeSummary): string {
+  const samples = latencyHistory.value[edge.edge_id] || [];
+  if (samples.length === 0) return "";
+  const min = Math.min(...samples);
+  const max = Math.max(...samples);
+  const range = Math.max(max - min, 1);
+  if (samples.length === 1) {
+    const y = SPARKLINE_HEIGHT / 2;
+    return `0,${y.toFixed(1)} ${SPARKLINE_WIDTH},${y.toFixed(1)}`;
+  }
+  return samples
+    .map((sample, index) => {
+      const x = (index / (samples.length - 1)) * SPARKLINE_WIDTH;
+      const normalized = range === 1 ? 0.5 : (sample - min) / range;
+      const y = SPARKLINE_HEIGHT - normalized * SPARKLINE_HEIGHT;
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    })
+    .join(" ");
 }
 </script>
 
@@ -249,18 +333,35 @@ function regionLatency(e: EdgeSummary): string {
                   </span>
                   <div class="sd-region-name">
                     <div class="sd-region-code">{{ e.edge_id }}</div>
-                    <div class="sd-region-city">{{ e.region }}</div>
+                    <div class="sd-region-city">
+                      {{ e.region }}
+                      <span v-if="regionMeshLatency(e)">
+                        · {{ regionMeshLatency(e) }}
+                      </span>
+                    </div>
                   </div>
                 </div>
-                <div class="sd-region-lat">
-                  <span class="sd-region-num">{{ regionLatency(e) }}</span>
-                  <span class="sd-region-unit">ms</span>
+                <div class="sd-region-right">
+                  <svg
+                    class="sd-region-spark"
+                    :viewBox="`0 0 ${SPARKLINE_WIDTH} ${SPARKLINE_HEIGHT}`"
+                    aria-hidden="true"
+                  >
+                    <polyline
+                      v-if="regionLatencySparkline(e)"
+                      :points="regionLatencySparkline(e)"
+                    />
+                  </svg>
+                  <div class="sd-region-lat">
+                    <span class="sd-region-num">{{ regionLatency(e) }}</span>
+                    <span class="sd-region-unit">{{ regionLatencyUnit(e) }}</span>
+                  </div>
                 </div>
               </li>
             </ul>
             <footer class="sd-regions-foot">
               <span v-if="meshState === 'live'">
-                live · racing /gateway/edges · refresh 15s
+                live · browser ping /gateway/health · refresh 2.5s
               </span>
               <span v-else-if="meshState === 'offline'">
                 mesh unreachable · retrying

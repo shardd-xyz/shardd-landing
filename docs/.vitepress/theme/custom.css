@@ -467,12 +467,38 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.sd-region-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  flex-shrink: 0;
+}
+.sd-region-spark {
+  width: 56px;
+  height: 16px;
+  overflow: visible;
+}
+.sd-region-spark polyline {
+  fill: none;
+  stroke: #22d3ee;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.88;
+}
+.sd-region[data-status="offline"] .sd-region-spark polyline {
+  stroke: #6b6b6b;
+  opacity: 0.4;
+}
+.sd-region[data-status="degraded"] .sd-region-spark polyline {
+  stroke: #f59e0b;
+}
 .sd-region-lat {
   font-feature-settings: "tnum";
   color: #f5f5f5;
   white-space: nowrap;
   flex-shrink: 0;
-  padding-left: 12px;
 }
 .sd-region-num {
   font-size: 15px;
