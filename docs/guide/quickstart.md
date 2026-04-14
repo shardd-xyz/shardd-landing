@@ -21,11 +21,10 @@ curl -sS https://use1.api.shardd.xyz/events \
   -H "Authorization: Bearer $SHARDD_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "owner": "dev_123",
     "bucket": "orders",
     "account": "alice",
     "amount": 10,
-    "note": "credit"
+    "note": "{\"kind\":\"credit\",\"source\":\"quickstart\"}"
   }'
 ```
 
@@ -33,7 +32,7 @@ Read balances:
 
 ```bash
 curl -sS \
-  "https://use1.api.shardd.xyz/balances?owner=dev_123&bucket=orders" \
+  "https://use1.api.shardd.xyz/balances?bucket=orders" \
   -H "Authorization: Bearer $SHARDD_API_KEY"
 ```
 
