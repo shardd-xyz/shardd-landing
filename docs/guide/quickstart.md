@@ -14,7 +14,7 @@ Each request uses a bearer API key:
 curl -sS https://use1.api.shardd.xyz/gateway/health
 ```
 
-Write an event:
+Deposit (credit):
 
 ```bash
 curl -sS https://use1.api.shardd.xyz/events \
@@ -23,8 +23,23 @@ curl -sS https://use1.api.shardd.xyz/events \
   -d '{
     "bucket": "orders",
     "account": "alice",
-    "amount": 10,
-    "note": "{\"kind\":\"credit\",\"source\":\"quickstart\"}"
+    "amount": 100,
+    "note": "top-up"
+  }'
+```
+
+Charge (debit):
+
+```bash
+curl -sS https://use1.api.shardd.xyz/events \
+  -H "Authorization: Bearer $SHARDD_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "bucket": "orders",
+    "account": "alice",
+    "amount": -25,
+    "note": "order-9821",
+    "idempotency_nonce": "order-9821-charge"
   }'
 ```
 
