@@ -16,6 +16,7 @@ export default defineConfig({
         href: "https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap",
       },
     ],
+    ["script", { defer: "", src: "https://cloud.umami.is/script.js", "data-website-id": "81c87671-2492-478d-9e60-12c3b0696fad" }],
     ["meta", { name: "theme-color", content: "#0a0a0a" }],
     ["meta", { property: "og:title", content: "shardd — balances at the edge" }],
     [
@@ -36,8 +37,8 @@ export default defineConfig({
     ],
     socialLinks: [{ icon: "github", link: "https://github.com/sssemil/shardd" }],
     footer: {
-      message: "Balance ledger at the edge.",
-      copyright: "© 2026 shardd",
+      message: '<a href="https://app.shardd.xyz/tos" style="color:inherit">Terms</a> · <a href="https://app.shardd.xyz/privacy" style="color:inherit">Privacy</a> · <a href="mailto:contact@tqdm.org" style="color:inherit">Contact</a>',
+      copyright: "© 2026 TQDM Inc.",
     },
     sidebar: [
       {
