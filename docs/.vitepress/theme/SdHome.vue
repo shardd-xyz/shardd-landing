@@ -59,22 +59,22 @@ const features = [
   {
     num: "01",
     title: "Credit, debit, hold",
-    body: "Per-account atomic section around every write. Idempotency nonces dedupe retried posts. Holds reserve balance up front with automatic expiry.",
+    body: "Atomic writes with idempotency. Holds reserve balance up front with automatic expiry.",
   },
   {
     num: "02",
     title: "Write from any region",
-    body: "POST to the nearest edge. Events propagate over libp2p gossipsub; a periodic catch-up sync closes any gaps. Write latency stays at the edge, not the slowest region.",
+    body: "POST to the nearest edge. Events replicate asynchronously — latency stays local.",
   },
   {
     num: "03",
     title: "No leader, no consensus",
-    body: "Every node holds a full replica of the event stream. No primary, no Raft, no Paxos — regions converge asynchronously and dedupe by origin key (node_id, epoch, seq).",
+    body: "Every node holds a full replica. Regions converge asynchronously with no coordination overhead.",
   },
   {
     num: "04",
     title: "Built for metered billing",
-    body: "LLM tokens, API credits, prepaid accounts. Append-only event stream per (bucket, account) with void and hold_release for corrections. Bounded sync lag, auditable forever.",
+    body: "LLM tokens, API credits, prepaid accounts. Append-only event stream, auditable forever.",
   },
 ];
 
@@ -289,10 +289,9 @@ function regionLatencySparkline(edge: EdgeSummary): string {
         <div class="sd-hero-row">
           <div class="sd-hero-col" data-delay="2">
             <p class="sd-tagline">
-              A distributed append-only ledger for metered billing. Post
-              credits, debits, and holds at any regional edge — writes
-              replicate asynchronously, no leader, no consensus on the
-              hot path.
+              A distributed ledger for metered billing. Post credits,
+              debits, and holds at any edge — writes replicate
+              asynchronously across regions.
             </p>
             <div class="sd-actions">
               <a class="sd-btn sd-btn-primary" href="https://app.shardd.xyz">
@@ -408,9 +407,8 @@ function regionLatencySparkline(edge: EdgeSummary): string {
             <span class="sd-section-label">// start here</span>
             <h2 class="sd-cta-title">POST /events.</h2>
             <p class="sd-cta-sub">
-              POST /events to credit or debit any account at any regional
-              edge. GET /balances from the same edge or any other. The
-              mesh handles replication.
+              Credit or debit any account at any edge. Read balances
+              from anywhere. The mesh handles the rest.
             </p>
           </div>
           <div class="sd-cta-actions">
