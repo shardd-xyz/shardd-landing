@@ -30,19 +30,19 @@
   --vp-c-text-2: #a1a1a1;
   --vp-c-text-3: #6b6b6b;
 
-  /* Brand: single cyan accent */
-  --vp-c-brand-1: #22d3ee;
-  --vp-c-brand-2: #06b6d4;
-  --vp-c-brand-3: #0891b2;
-  --vp-c-brand-soft: rgba(34, 211, 238, 0.14);
+  /* Brand: Factory orange accent */
+  --vp-c-brand-1: #ef6f2e;
+  --vp-c-brand-2: #ee6018;
+  --vp-c-brand-3: #d15010;
+  --vp-c-brand-soft: rgba(239, 111, 46, 0.14);
 
   /* Buttons */
-  --vp-button-brand-bg: #22d3ee;
-  --vp-button-brand-hover-bg: #67e8f9;
-  --vp-button-brand-active-bg: #06b6d4;
-  --vp-button-brand-text: #0a0a0a;
-  --vp-button-brand-hover-text: #0a0a0a;
-  --vp-button-brand-active-text: #0a0a0a;
+  --vp-button-brand-bg: #1f1d1c;
+  --vp-button-brand-hover-bg: #2e2c2b;
+  --vp-button-brand-active-bg: #1f1d1c;
+  --vp-button-brand-text: #fafafa;
+  --vp-button-brand-hover-text: #fafafa;
+  --vp-button-brand-active-text: #fafafa;
   --vp-button-brand-border: transparent;
   --vp-button-brand-hover-border: transparent;
   --vp-button-brand-active-border: transparent;
@@ -82,8 +82,9 @@ body {
 .VPNavBarMenuLink,
 .VPNavBarMenuGroup .text {
   font-family: var(--sd-font-mono) !important;
-  font-size: 13px !important;
-  letter-spacing: 0.01em !important;
+  font-size: 12px !important;
+  letter-spacing: -0.015rem !important;
+  text-transform: uppercase !important;
   color: var(--vp-c-text-2) !important;
 }
 .VPNavBarMenuLink:hover {
@@ -175,7 +176,7 @@ body {
   pointer-events: none;
   background: radial-gradient(
     ellipse at center,
-    rgba(34, 211, 238, 0.08),
+    rgba(239, 111, 46, 0.06),
     transparent 60%
   );
   filter: blur(40px);
@@ -211,7 +212,7 @@ body {
 
 /* Pulse dot — default cyan (live / healthy) */
 .sd-pulse {
-  --pulse-color: 34, 211, 238; /* cyan */
+  --pulse-color: 239, 111, 46; /* orange */
   position: relative;
   display: inline-block;
   width: 8px;
@@ -310,48 +311,74 @@ body {
 /* ============================================================ */
 
 .sd-btn {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 10px;
-  height: 46px;
-  padding: 0 22px;
+  height: 40px;
+  padding: 0 20px;
   border-radius: 4px;
-  font-family: var(--sd-font-sans);
-  font-weight: 500;
-  font-size: 14px;
-  letter-spacing: -0.005em;
+  font-family: var(--sd-font-mono);
+  font-weight: 400;
+  font-size: 12px;
+  letter-spacing: -0.015rem;
+  text-transform: uppercase;
   text-decoration: none;
   white-space: nowrap;
-  transition: background 160ms ease, border-color 160ms ease,
-    transform 160ms ease, color 160ms ease;
+  overflow: hidden;
+  transition: opacity 150ms ease, border-color 150ms ease, color 150ms ease;
   border: 1px solid transparent;
 }
 .sd-btn:hover {
   text-decoration: none;
 }
+.sd-btn-stripe {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 100ms ease;
+  background-image: repeating-linear-gradient(
+    45deg,
+    transparent 0px, transparent 2px,
+    rgba(138, 131, 128, 0.5) 2px,
+    rgba(138, 131, 128, 0.5) 3px,
+    transparent 3px, transparent 5px
+  );
+  background-size: 7.07px 7.07px;
+  animation: slidePattern 2s linear infinite;
+}
+@keyframes slidePattern {
+  0% { background-position: 0 0; }
+  100% { background-position: 28.28px -28.28px; }
+}
+.sd-btn:hover .sd-btn-stripe {
+  opacity: 1;
+}
+.sd-btn > span,
+.sd-btn > svg {
+  position: relative;
+  z-index: 1;
+}
 .sd-btn-primary {
-  background: #22d3ee;
-  color: #0a0a0a;
-  box-shadow: 0 0 0 0 rgba(34, 211, 238, 0.5);
+  background: #1f1d1c;
+  color: #fafafa;
+  border-color: #4d4947;
 }
 .sd-btn-primary:hover {
-  background: #67e8f9;
-  color: #0a0a0a;
-  box-shadow: 0 10px 30px -10px rgba(34, 211, 238, 0.5);
+  opacity: 0.85;
 }
 .sd-btn-ghost {
   background: transparent;
   color: #f5f5f5;
-  border-color: rgba(255, 255, 255, 0.16);
+  border-color: #4d4947;
 }
 .sd-btn-ghost:hover {
-  border-color: rgba(255, 255, 255, 0.32);
-  background: rgba(255, 255, 255, 0.03);
+  border-color: #5c5855;
   color: #ffffff;
 }
 .sd-btn-arrow {
-  font-family: var(--sd-font-mono);
   transition: transform 200ms ease;
 }
 .sd-btn:hover .sd-btn-arrow {
@@ -389,7 +416,7 @@ body {
   gap: 12px;
 }
 .sd-regions-label {
-  color: #22d3ee;
+  color: #ef6f2e;
   transition: color 200ms ease;
 }
 .sd-regions[data-state="offline"] .sd-regions-label {
@@ -409,7 +436,7 @@ body {
   color: #6b6b6b;
 }
 .sd-regions-state {
-  color: #22d3ee;
+  color: #ef6f2e;
   margin-left: 6px;
   text-transform: lowercase;
   letter-spacing: 0.04em;
@@ -481,7 +508,7 @@ body {
 }
 .sd-region-spark polyline {
   fill: none;
-  stroke: #22d3ee;
+  stroke: #ef6f2e;
   stroke-width: 1.75;
   stroke-linecap: round;
   stroke-linejoin: round;

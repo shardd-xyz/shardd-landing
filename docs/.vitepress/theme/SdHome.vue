@@ -295,6 +295,7 @@ function regionLatencySparkline(edge: EdgeSummary): string {
             </p>
             <div class="sd-actions">
               <a class="sd-btn sd-btn-primary" href="https://app.shardd.xyz">
+                <div class="sd-btn-stripe"></div>
                 <span>Log in</span>
                 <svg class="sd-btn-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
               </a>
@@ -413,6 +414,7 @@ function regionLatencySparkline(edge: EdgeSummary): string {
           </div>
           <div class="sd-cta-actions">
             <a class="sd-btn sd-btn-primary" href="/guide/quickstart">
+              <div class="sd-btn-stripe"></div>
               <span>Quickstart</span>
               <svg class="sd-btn-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
             </a>
