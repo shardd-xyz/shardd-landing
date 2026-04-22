@@ -377,27 +377,39 @@ const clientPointRaw = computed(() => {
   return { ...c, x, y };
 });
 
-// Anti-gravity label layout. Labels start offset from their anchor dot,
-// then many passes of pairwise repulsion push them so they don't overlap
-// (a) other labels or (b) any dot on the map (edge dots + client dot).
-// A weak spring back to each anchor keeps the association obvious.
-const MIN_DX = 38;  // label-label x threshold (SVG units of 360)
-const MIN_DY = 18;  // label-label y threshold (of 180)
-const DOT_PAD_X = 16; // keep labels clear of non-anchor dots horizontally
-const DOT_PAD_Y = 10; // ...and vertically
-const ITER = 60;
-const LABEL_BELOW = 9; // initial offset below the dot
-const YOU_ABOVE = 8;   // client label starts above its dot
+// Orbital label layout. Each label is a bead on a ring around its anchor
+// dot — fixed radius, free angle. Collisions with other labels / dots /
+// connector lines become torques that spin the bead tangentially until it
+// finds open sky. A weak angular spring biases it back to a pleasant
+// starting direction (below the dot for edges, above for the viewer) but
+// is easily overpowered when anything is in the way. This keeps labels
+// visually tethered close to their home dot while letting them flow
+// around like a floating force-graph.
+const LABEL_RADIUS = 12;  // distance from anchor dot to label center
+const MIN_DX = 30;        // label-label overlap threshold (x, of 360)
+const MIN_DY = 13;        // label-label overlap threshold (y, of 180)
+const DOT_CLEAR = 9;      // keep labels this far from non-anchor dots
+const LINE_CLEAR = 6;     // keep labels this far from connector lines
+const ITER = 90;
+const TORQUE_SCALE = 0.09;
+const SPRING_BACK = 0.02;
 
 type NudgeTarget = {
   key: string;
-  ax: number;       // anchor x (dot center)
-  ay: number;       // anchor y (initial label offset target)
-  x: number;
-  y: number;
-  dotX: number;     // actual dot position (for collision with other labels)
+  ax: number;         // anchor x (dot center)
+  ay: number;         // anchor y (dot center)
+  angle: number;      // current orbit angle around the anchor
+  angleBias: number;  // preferred resting angle
+  x: number;          // derived: ax + r·cos(angle)
+  y: number;          // derived: ay + r·sin(angle)
+  dotX: number;       // dot position for collisions with other labels
   dotY: number;
 };
+
+function updateLabelPos(t: NudgeTarget): void {
+  t.x = t.ax + LABEL_RADIUS * Math.cos(t.angle);
+  t.y = t.ay + LABEL_RADIUS * Math.sin(t.angle);
+}
 
 /// Shortest distance from point (px,py) to the segment [(ax,ay)-(bx,by)],
 /// plus a normalized perpendicular direction (from nearest segment point
@@ -428,76 +440,101 @@ function perpRepel(
 }
 
 function arrange(targets: NudgeTarget[], clientPt: { x: number; y: number } | null): NudgeTarget[] {
-  // Pre-compute line endpoints (client → each non-client target) so we
-  // only rebuild them once per iteration set, not per label per iteration.
-  const LINE_CLEAR = 9; // viewBox units — push labels at least this far from line
+  for (const t of targets) updateLabelPos(t);
+
   for (let k = 0; k < ITER; k++) {
+    const torques = new Array(targets.length).fill(0);
+
     for (let i = 0; i < targets.length; i++) {
-      let dy = 0;
-      let dx = 0;
-      // Label vs label.
+      const ti = targets[i];
+      let fx = 0;
+      let fy = 0;
+
+      // Label vs label — push apart along both axes if their boxes overlap.
       for (let j = 0; j < targets.length; j++) {
         if (i === j) continue;
-        const ex = targets[i].x - targets[j].x;
-        const ey = targets[i].y - targets[j].y;
+        const tj = targets[j];
+        const ex = ti.x - tj.x;
+        const ey = ti.y - tj.y;
         if (Math.abs(ex) < MIN_DX && Math.abs(ey) < MIN_DY) {
-          const direction = ey === 0 ? (i < j ? -1 : 1) : Math.sign(ey);
-          dy += (MIN_DY - Math.abs(ey)) * direction * 0.5;
+          const sx = ex === 0 ? (i < j ? -1 : 1) : Math.sign(ex);
+          const sy = ey === 0 ? (i < j ? -1 : 1) : Math.sign(ey);
+          fx += sx * (MIN_DX - Math.abs(ex)) * 0.35;
+          fy += sy * (MIN_DY - Math.abs(ey)) * 0.55;
         }
       }
-      // Label vs every dot (including other anchors but not this label's own).
+
+      // Label vs any non-anchor dot — radial push.
       for (let j = 0; j < targets.length; j++) {
         if (i === j) continue;
-        const ex = targets[i].x - targets[j].dotX;
-        const ey = targets[i].y - targets[j].dotY;
-        if (Math.abs(ex) < DOT_PAD_X && Math.abs(ey) < DOT_PAD_Y) {
-          const dirY = ey === 0 ? 1 : Math.sign(ey);
-          dy += (DOT_PAD_Y - Math.abs(ey)) * dirY * 0.6;
-          const dirX = ex === 0 ? (i < j ? -1 : 1) : Math.sign(ex);
-          dx += (DOT_PAD_X - Math.abs(ex)) * dirX * 0.25;
+        const tj = targets[j];
+        const ex = ti.x - tj.dotX;
+        const ey = ti.y - tj.dotY;
+        const d = Math.hypot(ex, ey);
+        if (d < DOT_CLEAR) {
+          const push = DOT_CLEAR - d;
+          const nx = d === 0 ? 1 : ex / d;
+          const ny = d === 0 ? 0 : ey / d;
+          fx += nx * push * 0.9;
+          fy += ny * push * 0.9;
         }
       }
-      // Label vs OTHER connector lines only (skip the line that ends at
-      // this label's own anchor dot — the label sits near that line on
-      // purpose; pushing it away is what made USE1/EUC1 labels drift).
+
+      // Label vs connector lines from client to every OTHER edge. Skip
+      // this label's own line (we're supposed to sit near it).
       if (clientPt) {
         for (let j = 0; j < targets.length; j++) {
-          if (targets[j].key === "__you") continue;     // no line to self
-          if (j === i) continue;                         // skip our own line
-          const repel = perpRepel(
-            targets[i].x, targets[i].y,
+          if (targets[j].key === "__you") continue;
+          if (j === i) continue;
+          const r = perpRepel(
+            ti.x, ti.y,
             clientPt.x, clientPt.y,
             targets[j].dotX, targets[j].dotY,
           );
-          if (repel && repel.dist < LINE_CLEAR) {
-            const push = (LINE_CLEAR - repel.dist);
-            dx += repel.nx * push * 0.4;
-            dy += repel.ny * push * 0.4;
+          if (r && r.dist < LINE_CLEAR) {
+            const push = LINE_CLEAR - r.dist;
+            fx += r.nx * push * 0.6;
+            fy += r.ny * push * 0.6;
           }
         }
       }
-      targets[i].y += dy * 0.3;
-      targets[i].x += dx * 0.18;
-      // Stronger spring back to anchor — previous 0.04 let labels drift;
-      // 0.12 pulls them home within a few dozen iterations once the
-      // repulsion forces have done their work.
-      targets[i].y += (targets[i].ay - targets[i].y) * 0.12;
-      targets[i].x += (targets[i].ax - targets[i].x) * 0.12;
-      // Clip to the map interior.
-      targets[i].y = Math.max(6, Math.min(172, targets[i].y));
-      targets[i].x = Math.max(12, Math.min(348, targets[i].x));
+
+      // Convert linear force into rotational torque around the anchor.
+      // τ = r × F ; positive τ rotates the bead counter-clockwise.
+      const ox = ti.x - ti.ax;
+      const oy = ti.y - ti.ay;
+      torques[i] = (ox * fy - oy * fx) / (LABEL_RADIUS * LABEL_RADIUS);
+    }
+
+    // Weak angular spring back to the preferred resting direction.
+    for (let i = 0; i < targets.length; i++) {
+      let diff = targets[i].angleBias - targets[i].angle;
+      while (diff > Math.PI) diff -= 2 * Math.PI;
+      while (diff < -Math.PI) diff += 2 * Math.PI;
+      torques[i] += diff * SPRING_BACK;
+    }
+
+    for (let i = 0; i < targets.length; i++) {
+      targets[i].angle += torques[i] * TORQUE_SCALE;
+      updateLabelPos(targets[i]);
     }
   }
   return targets;
 }
 
+// Angles in SVG space: 0 = right, π/2 = down, −π/2 = up.
+const EDGE_BIAS = Math.PI / 2;   // edge labels prefer sitting below their dot
+const YOU_BIAS = -Math.PI / 2;   // the viewer's label prefers to sit above
+
 const laidOut = computed(() => {
   const targets: NudgeTarget[] = rawMapEdges.value.map((e) => ({
     key: e.edge_id,
     ax: e.x,
-    ay: e.y + LABEL_BELOW,
+    ay: e.y,
+    angle: EDGE_BIAS,
+    angleBias: EDGE_BIAS,
     x: e.x,
-    y: e.y + LABEL_BELOW,
+    y: e.y + LABEL_RADIUS,
     dotX: e.x,
     dotY: e.y,
   }));
@@ -505,9 +542,11 @@ const laidOut = computed(() => {
     targets.push({
       key: "__you",
       ax: clientPointRaw.value.x,
-      ay: clientPointRaw.value.y - YOU_ABOVE,
+      ay: clientPointRaw.value.y,
+      angle: YOU_BIAS,
+      angleBias: YOU_BIAS,
       x: clientPointRaw.value.x,
-      y: clientPointRaw.value.y - YOU_ABOVE,
+      y: clientPointRaw.value.y - LABEL_RADIUS,
       dotX: clientPointRaw.value.x,
       dotY: clientPointRaw.value.y,
     });
@@ -526,7 +565,7 @@ const laidOut = computed(() => {
 const mapEdges = computed<MapEdge[]>(() =>
   rawMapEdges.value.map((e) => {
     const t = laidOut.value[e.edge_id];
-    return { ...e, lx: t?.x ?? e.x, ly: t?.y ?? e.y + LABEL_BELOW };
+    return { ...e, lx: t?.x ?? e.x, ly: t?.y ?? e.y + LABEL_RADIUS };
   })
 );
 
@@ -536,7 +575,7 @@ const clientPoint = computed(() => {
   return {
     ...clientPointRaw.value,
     lx: t?.x ?? clientPointRaw.value.x,
-    ly: t?.y ?? clientPointRaw.value.y - YOU_ABOVE,
+    ly: t?.y ?? clientPointRaw.value.y - LABEL_RADIUS,
   };
 });
 
