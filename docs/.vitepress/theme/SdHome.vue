@@ -305,13 +305,12 @@ const clientCoords = computed(() => {
   }
 });
 
-// Equirectangular projection into the SVG viewBox (100 × 50 → 2:1 aspect
-// ratio, matching a world map). Clamp lat to [-60, 75] so Antarctica and
-// the polar cap don't stretch the y-axis.
+// Equirectangular projection matching the pre-rendered world-land.svg
+// (viewBox 0 0 360 180, same as d3.geoEquirectangular at scale 180/π).
+// That way continents, dots, lines, and labels all share a coord system.
 function project(lat: number, lon: number): { x: number; y: number } {
-  const x = ((lon + 180) / 360) * 100;
-  const clampedLat = Math.max(-60, Math.min(75, lat));
-  const y = ((75 - clampedLat) / 135) * 50;
+  const x = 180 + lon;
+  const y = 90 - lat;
   return { x, y };
 }
 
@@ -423,63 +422,53 @@ function regionLatencySparkline(edge: EdgeSummary): string {
               </span>
             </header>
 
-            <!-- Minimap: visitor's approximate location (from browser
-                 timezone) and lines to each public edge, labelled with the
-                 RTT we just measured in-browser. Unknown timezone falls
-                 back to edges-only. -->
+            <!-- Minimap: pre-rendered world-land.svg is the background;
+                 dots + lines + labels overlay it in the same 360x180 coord
+                 system so continents, edges and the viewer's dot agree.
+                 Inner wrapper holds the aspect-ratio so labels and SVG
+                 share a single coordinate system. -->
             <div class="sd-map" aria-hidden="true">
-              <svg class="sd-map-svg" viewBox="0 0 100 50" preserveAspectRatio="none">
-                <defs>
-                  <pattern id="sdMapGrid" x="0" y="0" width="10" height="10" patternUnits="userSpaceOnUse">
-                    <path d="M10 0H0V10" fill="none" stroke="var(--color-base-800)" stroke-width="0.1"/>
-                  </pattern>
-                </defs>
-                <rect width="100" height="50" fill="url(#sdMapGrid)"/>
-                <!-- Lines from the viewer to each edge. Drawn first so the dots sit on top. -->
-                <template v-if="clientPoint">
-                  <line
-                    v-for="e in mapEdges"
-                    :key="`line-${e.edge_id}`"
-                    :x1="clientPoint.x"
-                    :y1="clientPoint.y"
-                    :x2="e.x"
-                    :y2="e.y"
-                    class="sd-map-link"
-                    :class="[`sd-map-link-${e.status}`]"
-                  />
-                </template>
-                <!-- Edge dots. -->
-                <g v-for="e in mapEdges" :key="`edge-${e.edge_id}`">
-                  <circle :cx="e.x" :cy="e.y" r="0.8" class="sd-map-edge" :class="[`sd-map-edge-${e.status}`]"/>
-                  <circle :cx="e.x" :cy="e.y" r="1.8" class="sd-map-edge-halo" :class="[`sd-map-edge-halo-${e.status}`]"/>
-                </g>
-                <!-- Client dot. -->
-                <g v-if="clientPoint">
-                  <circle :cx="clientPoint.x" :cy="clientPoint.y" r="0.7" class="sd-map-you"/>
-                  <circle :cx="clientPoint.x" :cy="clientPoint.y" r="2.0" class="sd-map-you-halo"/>
-                </g>
-              </svg>
-              <!-- Labels rendered as HTML rather than SVG <text> so they
-                   scale with the container font-size and stay crisp. The
-                   top coord multiplies by 2 because the SVG is 100 × 50
-                   while the overlay div is 100% × 100% — 50 viewBox units
-                   of height = 100% of the overlay. -->
-              <div
-                v-for="e in mapEdges"
-                :key="`label-${e.edge_id}`"
-                class="sd-map-label"
-                :class="[`sd-map-label-${e.status}`]"
-                :style="{ left: `${e.x}%`, top: `${e.y * 2}%` }"
-              >
-                <span class="sd-map-label-code">{{ e.edge_id }}</span>
-                <span class="sd-map-label-rtt">{{ e.rtt }}<span class="sd-map-label-unit"> {{ e.rtt_unit }}</span></span>
-              </div>
-              <div
-                v-if="clientPoint"
-                class="sd-map-you-label"
-                :style="{ left: `${clientPoint.x}%`, top: `${clientPoint.y * 2}%` }"
-              >
-                you · {{ clientPoint.city }}
+              <div class="sd-map-inner">
+                <img src="/world-land.svg" class="sd-map-bg" alt="" decoding="async" />
+                <svg class="sd-map-svg" viewBox="0 0 360 180" preserveAspectRatio="none">
+                  <template v-if="clientPoint">
+                    <line
+                      v-for="e in mapEdges"
+                      :key="`line-${e.edge_id}`"
+                      :x1="clientPoint.x"
+                      :y1="clientPoint.y"
+                      :x2="e.x"
+                      :y2="e.y"
+                      class="sd-map-link"
+                      :class="[`sd-map-link-${e.status}`]"
+                    />
+                  </template>
+                  <g v-for="e in mapEdges" :key="`edge-${e.edge_id}`">
+                    <circle :cx="e.x" :cy="e.y" r="5" class="sd-map-edge-halo" :class="[`sd-map-edge-halo-${e.status}`]"/>
+                    <circle :cx="e.x" :cy="e.y" r="2.2" class="sd-map-edge" :class="[`sd-map-edge-${e.status}`]"/>
+                  </g>
+                  <g v-if="clientPoint">
+                    <circle :cx="clientPoint.x" :cy="clientPoint.y" r="6" class="sd-map-you-halo"/>
+                    <circle :cx="clientPoint.x" :cy="clientPoint.y" r="2" class="sd-map-you"/>
+                  </g>
+                </svg>
+                <div
+                  v-for="e in mapEdges"
+                  :key="`label-${e.edge_id}`"
+                  class="sd-map-label"
+                  :class="[`sd-map-label-${e.status}`]"
+                  :style="{ left: `${e.x / 3.6}%`, top: `${e.y / 1.8}%` }"
+                >
+                  <span class="sd-map-label-code">{{ e.edge_id }}</span>
+                  <span class="sd-map-label-rtt">{{ e.rtt }}<span class="sd-map-label-unit"> {{ e.rtt_unit }}</span></span>
+                </div>
+                <div
+                  v-if="clientPoint"
+                  class="sd-map-you-label"
+                  :style="{ left: `${clientPoint.x / 3.6}%`, top: `${clientPoint.y / 1.8}%` }"
+                >
+                  you · {{ clientPoint.city }}
+                </div>
               </div>
             </div>
             <p class="sd-map-caption">

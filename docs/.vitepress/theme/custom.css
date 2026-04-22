@@ -279,17 +279,19 @@ body {
   max-width: 14ch;
 }
 
-/* Hero row: tagline+CTAs | regions panel */
+/* Hero row: copy on top, regions panel below (full-width) so the map has
+ * room to render continents legibly. Falls back to stacked on narrow
+ * screens naturally. */
 .sd-hero-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 420px);
-  gap: 64px;
-  align-items: start;
+  display: flex;
+  flex-direction: column;
+  gap: 48px;
+  align-items: stretch;
   margin-top: 56px;
 }
 
 .sd-hero-col {
-  max-width: 520px;
+  max-width: 720px;
 }
 
 .sd-tagline {
@@ -873,22 +875,38 @@ body {
 /* ============================================================ */
 
 .sd-map {
-  position: relative;
-  padding: 14px 18px 4px;
+  padding: 20px 24px 8px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
-.sd-map-svg {
-  display: block;
+.sd-map-inner {
+  position: relative;
   width: 100%;
   aspect-ratio: 2 / 1;
+}
+
+.sd-map-bg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  user-select: none;
+  pointer-events: none;
+  opacity: 0.5;
+}
+
+.sd-map-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   overflow: visible;
+  pointer-events: none;
 }
 
 .sd-map-link {
-  stroke: var(--color-base-700);
-  stroke-width: 0.3;
-  stroke-dasharray: 0.8 0.8;
+  stroke: var(--color-base-600);
+  stroke-width: 0.8;
+  stroke-dasharray: 3 2;
   opacity: 0.7;
 }
 .sd-map-link-healthy { stroke: var(--color-accent-100); opacity: 0.85; }
@@ -896,15 +914,15 @@ body {
 .sd-map-link-offline { stroke: var(--color-base-700); opacity: 0.4; }
 
 .sd-map-edge {
-  fill: var(--color-base-700);
+  fill: var(--color-base-600);
 }
 .sd-map-edge-healthy { fill: var(--color-accent-100); }
 .sd-map-edge-degraded { fill: #fbbf24; }
 
 .sd-map-edge-halo {
   fill: none;
-  stroke: var(--color-base-700);
-  stroke-width: 0.12;
+  stroke: var(--color-base-600);
+  stroke-width: 0.4;
 }
 .sd-map-edge-halo-healthy { stroke: var(--color-accent-100); }
 
@@ -915,7 +933,7 @@ body {
 .sd-map-you-halo {
   fill: none;
   stroke: #eee;
-  stroke-width: 0.15;
+  stroke-width: 0.5;
   animation: sdMapPulse 2s ease-out infinite;
   transform-origin: center;
   transform-box: fill-box;
@@ -929,9 +947,9 @@ body {
 
 .sd-map-label {
   position: absolute;
-  transform: translate(-50%, 10px);
+  transform: translate(-50%, 14px);
   font-family: var(--sd-font-mono);
-  font-size: 10px;
+  font-size: 12px;
   color: var(--color-base-400);
   white-space: nowrap;
   pointer-events: none;
