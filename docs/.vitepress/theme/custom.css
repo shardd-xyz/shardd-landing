@@ -934,15 +934,14 @@ body {
 }
 
 .sd-map-link {
-  /* True dotted stroke: 0-length "dash" + round linecap renders as
-   * circular dots. `non-scaling-stroke` keeps the stroke width constant
-   * regardless of the SVG's distorted (non-uniform) scaling. */
+  /* True dotted stroke: 0-length dash + round linecap = circular dots.
+   * Units are SVG viewBox units (360 wide × 180 tall). stroke-width of 2
+   * with a dash every 5 units ≈ visible dots every ~1% of map width. */
   stroke: var(--color-accent-100);
-  stroke-width: 2.5;
+  stroke-width: 2;
   stroke-linecap: round;
-  stroke-dasharray: 0 6;
-  vector-effect: non-scaling-stroke;
-  opacity: 0.9;
+  stroke-dasharray: 0 5;
+  opacity: 1;
 }
 .sd-map-link-offline { opacity: 0.4; }
 
