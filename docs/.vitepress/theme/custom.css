@@ -934,18 +934,16 @@ body {
 }
 
 .sd-map-link {
-  /* Dotted via visible dashes (1.2u dash + 5u gap, round linecap). Pure
-   * 0-length dashes render inconsistently in Chromium under non-uniform
-   * scaling; a small positive dash with round linecap gives dots that
-   * render reliably everywhere. */
+  /* Thin dotted line: 0.6u dash + 3u gap with round linecap gives a
+   * subtle trail of dots rather than a heavy chain. */
   stroke: #ef6f2e;
-  stroke-width: 3;
+  stroke-width: 1.4;
   stroke-linecap: round;
-  stroke-dasharray: 1.2 5;
+  stroke-dasharray: 0.6 3;
   fill: none;
-  opacity: 1;
+  opacity: 0.9;
 }
-.sd-map-link-offline { opacity: 0.4; }
+.sd-map-link-offline { opacity: 0.35; }
 
 .sd-map-edge {
   /* Always orange. Status info reads from the right-hand table — here the
