@@ -246,6 +246,108 @@ function regionMeshLatency(e: EdgeSummary): string | null {
   return `mesh ${Math.round(e.best_node_rtt_ms)} ms`;
 }
 
+// ── Minimap: show the visitor's rough location and connect it to the three
+// public edges. Communicates "this is a ping from YOUR browser to these
+// boxes" without an IP-geo API — just the browser's timezone, rounded to
+// a handful of hubs that cover most traffic. Unknown timezones hide the
+// client dot so we never pretend to know where someone is.
+
+const EDGE_COORDS: Record<string, { lat: number; lon: number; label: string }> = {
+  use1: { lat: 37.4, lon: -79.1, label: "Virginia" },
+  euc1: { lat: 50.1, lon: 8.6, label: "Frankfurt" },
+  ape1: { lat: 22.3, lon: 114.2, label: "Hong Kong" },
+};
+
+// Rough city → lat/lon table keyed by IANA timezone. Covers the majority
+// of real-world traffic; anything else falls through to null.
+const TZ_COORDS: Record<string, { lat: number; lon: number; city: string }> = {
+  "America/New_York": { lat: 40.7, lon: -74.0, city: "New York" },
+  "America/Chicago": { lat: 41.9, lon: -87.6, city: "Chicago" },
+  "America/Denver": { lat: 39.7, lon: -105.0, city: "Denver" },
+  "America/Los_Angeles": { lat: 34.0, lon: -118.2, city: "Los Angeles" },
+  "America/Toronto": { lat: 43.7, lon: -79.4, city: "Toronto" },
+  "America/Vancouver": { lat: 49.3, lon: -123.1, city: "Vancouver" },
+  "America/Mexico_City": { lat: 19.4, lon: -99.1, city: "Mexico City" },
+  "America/Sao_Paulo": { lat: -23.5, lon: -46.6, city: "São Paulo" },
+  "America/Argentina/Buenos_Aires": { lat: -34.6, lon: -58.4, city: "Buenos Aires" },
+  "Europe/London": { lat: 51.5, lon: -0.1, city: "London" },
+  "Europe/Dublin": { lat: 53.3, lon: -6.3, city: "Dublin" },
+  "Europe/Paris": { lat: 48.9, lon: 2.3, city: "Paris" },
+  "Europe/Berlin": { lat: 52.5, lon: 13.4, city: "Berlin" },
+  "Europe/Madrid": { lat: 40.4, lon: -3.7, city: "Madrid" },
+  "Europe/Amsterdam": { lat: 52.4, lon: 4.9, city: "Amsterdam" },
+  "Europe/Stockholm": { lat: 59.3, lon: 18.1, city: "Stockholm" },
+  "Europe/Warsaw": { lat: 52.2, lon: 21.0, city: "Warsaw" },
+  "Europe/Moscow": { lat: 55.8, lon: 37.6, city: "Moscow" },
+  "Europe/Istanbul": { lat: 41.0, lon: 28.9, city: "Istanbul" },
+  "Africa/Cairo": { lat: 30.0, lon: 31.2, city: "Cairo" },
+  "Africa/Lagos": { lat: 6.5, lon: 3.4, city: "Lagos" },
+  "Africa/Johannesburg": { lat: -26.2, lon: 28.0, city: "Johannesburg" },
+  "Asia/Dubai": { lat: 25.2, lon: 55.3, city: "Dubai" },
+  "Asia/Kolkata": { lat: 28.6, lon: 77.2, city: "Delhi" },
+  "Asia/Bangkok": { lat: 13.8, lon: 100.5, city: "Bangkok" },
+  "Asia/Singapore": { lat: 1.4, lon: 103.8, city: "Singapore" },
+  "Asia/Hong_Kong": { lat: 22.3, lon: 114.2, city: "Hong Kong" },
+  "Asia/Shanghai": { lat: 31.2, lon: 121.5, city: "Shanghai" },
+  "Asia/Tokyo": { lat: 35.7, lon: 139.7, city: "Tokyo" },
+  "Asia/Seoul": { lat: 37.6, lon: 127.0, city: "Seoul" },
+  "Australia/Sydney": { lat: -33.9, lon: 151.2, city: "Sydney" },
+  "Australia/Melbourne": { lat: -37.8, lon: 145.0, city: "Melbourne" },
+  "Pacific/Auckland": { lat: -36.8, lon: 174.8, city: "Auckland" },
+};
+
+const clientCoords = computed(() => {
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    return TZ_COORDS[tz] ?? null;
+  } catch {
+    return null;
+  }
+});
+
+// Equirectangular projection into the SVG viewBox (100 × 50 → 2:1 aspect
+// ratio, matching a world map). Clamp lat to [-60, 75] so Antarctica and
+// the polar cap don't stretch the y-axis.
+function project(lat: number, lon: number): { x: number; y: number } {
+  const x = ((lon + 180) / 360) * 100;
+  const clampedLat = Math.max(-60, Math.min(75, lat));
+  const y = ((75 - clampedLat) / 135) * 50;
+  return { x, y };
+}
+
+type MapEdge = {
+  edge_id: string;
+  label: string;
+  x: number;
+  y: number;
+  status: "healthy" | "degraded" | "offline";
+  rtt: string;
+  rtt_unit: string;
+};
+
+const mapEdges = computed<MapEdge[]>(() =>
+  edges.value.map((e) => {
+    const geo = EDGE_COORDS[e.edge_id] ?? { lat: 0, lon: 0, label: e.region };
+    const { x, y } = project(geo.lat, geo.lon);
+    return {
+      edge_id: e.edge_id,
+      label: geo.label,
+      x,
+      y,
+      status: regionStatus(e),
+      rtt: regionLatency(e),
+      rtt_unit: regionLatencyUnit(e),
+    };
+  })
+);
+
+const clientPoint = computed(() => {
+  const c = clientCoords.value;
+  if (!c) return null;
+  const { x, y } = project(c.lat, c.lon);
+  return { ...c, x, y };
+});
+
 function regionLatencySparkline(edge: EdgeSummary): string {
   const samples = latencyHistory.value[edge.edge_id] || [];
   if (samples.length === 0) return "";
@@ -320,6 +422,71 @@ function regionLatencySparkline(edge: EdgeSummary): string {
                 <span class="sd-regions-state">· {{ meshLabel }}</span>
               </span>
             </header>
+
+            <!-- Minimap: visitor's approximate location (from browser
+                 timezone) and lines to each public edge, labelled with the
+                 RTT we just measured in-browser. Unknown timezone falls
+                 back to edges-only. -->
+            <div class="sd-map" aria-hidden="true">
+              <svg class="sd-map-svg" viewBox="0 0 100 50" preserveAspectRatio="none">
+                <defs>
+                  <pattern id="sdMapGrid" x="0" y="0" width="10" height="10" patternUnits="userSpaceOnUse">
+                    <path d="M10 0H0V10" fill="none" stroke="var(--color-base-800)" stroke-width="0.1"/>
+                  </pattern>
+                </defs>
+                <rect width="100" height="50" fill="url(#sdMapGrid)"/>
+                <!-- Lines from the viewer to each edge. Drawn first so the dots sit on top. -->
+                <template v-if="clientPoint">
+                  <line
+                    v-for="e in mapEdges"
+                    :key="`line-${e.edge_id}`"
+                    :x1="clientPoint.x"
+                    :y1="clientPoint.y"
+                    :x2="e.x"
+                    :y2="e.y"
+                    class="sd-map-link"
+                    :class="[`sd-map-link-${e.status}`]"
+                  />
+                </template>
+                <!-- Edge dots. -->
+                <g v-for="e in mapEdges" :key="`edge-${e.edge_id}`">
+                  <circle :cx="e.x" :cy="e.y" r="0.8" class="sd-map-edge" :class="[`sd-map-edge-${e.status}`]"/>
+                  <circle :cx="e.x" :cy="e.y" r="1.8" class="sd-map-edge-halo" :class="[`sd-map-edge-halo-${e.status}`]"/>
+                </g>
+                <!-- Client dot. -->
+                <g v-if="clientPoint">
+                  <circle :cx="clientPoint.x" :cy="clientPoint.y" r="0.7" class="sd-map-you"/>
+                  <circle :cx="clientPoint.x" :cy="clientPoint.y" r="2.0" class="sd-map-you-halo"/>
+                </g>
+              </svg>
+              <!-- Labels rendered as HTML rather than SVG <text> so they
+                   scale with the container font-size and stay crisp. The
+                   top coord multiplies by 2 because the SVG is 100 × 50
+                   while the overlay div is 100% × 100% — 50 viewBox units
+                   of height = 100% of the overlay. -->
+              <div
+                v-for="e in mapEdges"
+                :key="`label-${e.edge_id}`"
+                class="sd-map-label"
+                :class="[`sd-map-label-${e.status}`]"
+                :style="{ left: `${e.x}%`, top: `${e.y * 2}%` }"
+              >
+                <span class="sd-map-label-code">{{ e.edge_id }}</span>
+                <span class="sd-map-label-rtt">{{ e.rtt }}<span class="sd-map-label-unit"> {{ e.rtt_unit }}</span></span>
+              </div>
+              <div
+                v-if="clientPoint"
+                class="sd-map-you-label"
+                :style="{ left: `${clientPoint.x}%`, top: `${clientPoint.y * 2}%` }"
+              >
+                you · {{ clientPoint.city }}
+              </div>
+            </div>
+            <p class="sd-map-caption">
+              <span v-if="clientPoint">Ping from your browser ({{ clientPoint.city }}) to each edge · refreshes every 2.5s.</span>
+              <span v-else>Ping from your browser to each public edge · refreshes every 2.5s.</span>
+            </p>
+
             <ul class="sd-regions-list">
               <li
                 v-for="e in edges"
