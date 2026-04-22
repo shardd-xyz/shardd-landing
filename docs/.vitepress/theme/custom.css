@@ -934,13 +934,16 @@ body {
 }
 
 .sd-map-link {
-  /* True dotted stroke: 0-length dash + round linecap = circular dots.
-   * Units are SVG viewBox units (360 wide × 180 tall). stroke-width of 2
-   * with a dash every 5 units ≈ visible dots every ~1% of map width. */
+  /* Dotted stroke: a dash of length 0.5 with a 5-unit gap (and round
+   * linecap) renders as circular dots across most browsers. Some engines
+   * drop a pure 0-length dash, hence the small positive value. Width is
+   * in SVG viewBox units (360×180). */
   stroke: var(--color-accent-100);
-  stroke-width: 2;
+  stroke-width: 2.5;
   stroke-linecap: round;
-  stroke-dasharray: 0 5;
+  stroke-linejoin: round;
+  stroke-dasharray: 0.5 6;
+  fill: none;
   opacity: 1;
 }
 .sd-map-link-offline { opacity: 0.4; }
