@@ -377,23 +377,34 @@ const clientPointRaw = computed(() => {
   return { ...c, x, y };
 });
 
-// Anti-gravity label layout. Labels start at their anchor dot (offset
-// slightly below), then a few passes of pairwise repulsion push them
-// apart along the y-axis so they never stack on top of each other.
-// Labels still pull back toward their anchor so the connection stays
-// visually obvious.
-const MIN_DX = 35; // SVG units (of 360) — ~10% of map width
-const MIN_DY = 16; // SVG units (of 180) — ~9% of map height
-const ITER = 30;
-const LABEL_BELOW = 8; // initial offset below the dot
-const YOU_ABOVE = 7;   // client label starts above its dot
+// Anti-gravity label layout. Labels start offset from their anchor dot,
+// then many passes of pairwise repulsion push them so they don't overlap
+// (a) other labels or (b) any dot on the map (edge dots + client dot).
+// A weak spring back to each anchor keeps the association obvious.
+const MIN_DX = 38;  // label-label x threshold (SVG units of 360)
+const MIN_DY = 18;  // label-label y threshold (of 180)
+const DOT_PAD_X = 16; // keep labels clear of non-anchor dots horizontally
+const DOT_PAD_Y = 10; // ...and vertically
+const ITER = 60;
+const LABEL_BELOW = 9; // initial offset below the dot
+const YOU_ABOVE = 8;   // client label starts above its dot
 
-type NudgeTarget = { key: string; ax: number; ay: number; x: number; y: number };
+type NudgeTarget = {
+  key: string;
+  ax: number;       // anchor x (dot center)
+  ay: number;       // anchor y (initial label offset target)
+  x: number;
+  y: number;
+  dotX: number;     // actual dot position (for collision with other labels)
+  dotY: number;
+};
 
 function arrange(targets: NudgeTarget[]): NudgeTarget[] {
   for (let k = 0; k < ITER; k++) {
     for (let i = 0; i < targets.length; i++) {
       let dy = 0;
+      let dx = 0;
+      // Label vs label.
       for (let j = 0; j < targets.length; j++) {
         if (i === j) continue;
         const ex = targets[i].x - targets[j].x;
@@ -403,12 +414,26 @@ function arrange(targets: NudgeTarget[]): NudgeTarget[] {
           dy += (MIN_DY - Math.abs(ey)) * direction * 0.5;
         }
       }
+      // Label vs every dot (including other anchors but not this label's own).
+      for (let j = 0; j < targets.length; j++) {
+        if (i === j) continue;
+        const ex = targets[i].x - targets[j].dotX;
+        const ey = targets[i].y - targets[j].dotY;
+        if (Math.abs(ex) < DOT_PAD_X && Math.abs(ey) < DOT_PAD_Y) {
+          const dirY = ey === 0 ? 1 : Math.sign(ey);
+          dy += (DOT_PAD_Y - Math.abs(ey)) * dirY * 0.6;
+          const dirX = ex === 0 ? (i < j ? -1 : 1) : Math.sign(ex);
+          dx += (DOT_PAD_X - Math.abs(ex)) * dirX * 0.25;
+        }
+      }
       targets[i].y += dy * 0.35;
-      // Weak spring back so labels stay near their anchor rather than
-      // drifting to the edge of the map.
+      targets[i].x += dx * 0.2;
+      // Weak spring back so labels stay near their anchor.
       targets[i].y += (targets[i].ay - targets[i].y) * 0.04;
-      // Keep labels inside the map bounds (with a small margin for text).
+      targets[i].x += (targets[i].ax - targets[i].x) * 0.04;
+      // Clip to the map interior.
       targets[i].y = Math.max(6, Math.min(172, targets[i].y));
+      targets[i].x = Math.max(12, Math.min(348, targets[i].x));
     }
   }
   return targets;
@@ -421,6 +446,8 @@ const laidOut = computed(() => {
     ay: e.y + LABEL_BELOW,
     x: e.x,
     y: e.y + LABEL_BELOW,
+    dotX: e.x,
+    dotY: e.y,
   }));
   if (clientPointRaw.value) {
     targets.push({
@@ -429,6 +456,8 @@ const laidOut = computed(() => {
       ay: clientPointRaw.value.y - YOU_ABOVE,
       x: clientPointRaw.value.x,
       y: clientPointRaw.value.y - YOU_ABOVE,
+      dotX: clientPointRaw.value.x,
+      dotY: clientPointRaw.value.y,
     });
   }
   arrange(targets);
