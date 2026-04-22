@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, computed } from "vue";
+import { ref, onMounted, onBeforeUnmount, computed, watch } from "vue";
 
 // Shape matches libs/types::PublicEdgeSummary plus browser-measured RTT.
 type EdgeSummary = {
@@ -377,44 +377,67 @@ const clientPointRaw = computed(() => {
   return { ...c, x, y };
 });
 
-// Orbital label layout. Each label is a bead on a ring around its anchor
-// dot — fixed radius, free angle. Collisions with other labels / dots /
-// connector lines become torques that spin the bead tangentially until it
-// finds open sky. A weak angular spring biases it back to a pleasant
-// starting direction (below the dot for edges, above for the viewer) but
-// is easily overpowered when anything is in the way. This keeps labels
-// visually tethered close to their home dot while letting them flow
-// around like a floating force-graph.
-const LABEL_RADIUS = 12;  // distance from anchor dot to label center
-const MIN_DX = 30;        // label-label overlap threshold (x, of 360)
-const MIN_DY = 13;        // label-label overlap threshold (y, of 180)
-const DOT_CLEAR = 9;      // keep labels this far from non-anchor dots
-const LINE_CLEAR = 6;     // keep labels this far from connector lines
-const ITER = 90;
-const TORQUE_SCALE = 0.09;
-const SPRING_BACK = 0.02;
+// Continuous physics for label orbits and line bends. Every frame the RAF
+// step integrates forces on each label (repulsion from other labels, dots
+// and connector lines; angular spring back to a bias direction; radial
+// spring to rest radius) and each line (bend springs back to zero). The
+// user can grab a label and pull it around — drag overrides physics and
+// the velocity built up during drag carries through on release, so the
+// label wobbles back like a pendulum. Lines are quadratic Béziers with a
+// draggable midpoint that springs back the same way.
+const LABEL_RADIUS = 9;       // rest distance from dot to label center
+const MIN_DX = 30;            // label-label overlap threshold (x, of 360)
+const MIN_DY = 13;            // label-label overlap threshold (y, of 180)
+const DOT_CLEAR = 8;          // keep labels this far from non-anchor dots
+const LINE_CLEAR = 6;         // keep labels this far from connector lines
 
-type NudgeTarget = {
+const DAMP_PER_SEC = 3.8;     // v *= exp(-DAMP_PER_SEC·dt) — wobble decay
+const ANGLE_SPRING = 6.0;     // rad/s² per rad offset from bias
+const RADIUS_SPRING = 60.0;   // u/s² per unit offset from rest radius
+const BEND_SPRING = 36.0;     // u/s² per unit of line bend
+const TORQUE_GAIN = 75.0;     // force→angular-accel multiplier
+const MAX_DT = 0.05;
+
+const EDGE_BIAS = Math.PI / 2;   // edge labels prefer sitting below dot
+const YOU_BIAS = -Math.PI / 2;   // viewer label prefers sitting above
+
+type LabelBody = {
   key: string;
-  ax: number;         // anchor x (dot center)
-  ay: number;         // anchor y (dot center)
-  angle: number;      // current orbit angle around the anchor
-  angleBias: number;  // preferred resting angle
-  x: number;          // derived: ax + r·cos(angle)
-  y: number;          // derived: ay + r·sin(angle)
-  dotX: number;       // dot position for collisions with other labels
+  ax: number;         // anchor (dot) x
+  ay: number;         // anchor (dot) y
+  dotX: number;
   dotY: number;
+  angle: number;
+  radius: number;
+  angleBias: number;
+  angleV: number;
+  radiusV: number;
 };
 
-function updateLabelPos(t: NudgeTarget): void {
-  t.x = t.ax + LABEL_RADIUS * Math.cos(t.angle);
-  t.y = t.ay + LABEL_RADIUS * Math.sin(t.angle);
-}
+type LineBody = {
+  edgeId: string;
+  bendX: number;
+  bendY: number;
+  bendVX: number;
+  bendVY: number;
+};
 
-/// Shortest distance from point (px,py) to the segment [(ax,ay)-(bx,by)],
-/// plus a normalized perpendicular direction (from nearest segment point
-/// toward the input point). Returns null when the nearest point lies at
-/// an endpoint — we handle endpoint-repulsion via the dot-vs-label pass.
+type Drag =
+  | { kind: "label"; key: string; vbX: number; vbY: number }
+  | { kind: "line"; key: string; vbX: number; vbY: number }
+  | null;
+
+const labelBodies = ref<Record<string, LabelBody>>({});
+const lineBodies = ref<Record<string, LineBody>>({});
+const dragState = ref<Drag>(null);
+const mapInnerEl = ref<HTMLElement | null>(null);
+let rafId = 0;
+let lastStepTs = 0;
+
+/// Shortest distance from (px,py) to segment [(ax,ay)-(bx,by)], plus the
+/// normalized push direction (from nearest segment point toward the input
+/// point). Returns null when the perpendicular foot lies near an endpoint
+/// — the dot-repulsion pass handles those cases.
 function perpRepel(
   px: number, py: number,
   ax: number, ay: number,
@@ -425,158 +448,258 @@ function perpRepel(
   const len2 = dx * dx + dy * dy;
   if (len2 === 0) return null;
   const t = ((px - ax) * dx + (py - ay) * dy) / len2;
-  if (t <= 0.05 || t >= 0.95) return null; // let endpoint handler cover it
+  if (t <= 0.05 || t >= 0.95) return null;
   const cx = ax + t * dx;
   const cy = ay + t * dy;
   const vx = px - cx;
   const vy = py - cy;
   const dist = Math.hypot(vx, vy);
   if (dist === 0) {
-    // Label is exactly on the line — push perpendicular.
     const ln = Math.hypot(dx, dy);
     return { dist: 0, nx: -dy / ln, ny: dx / ln };
   }
   return { dist, nx: vx / dist, ny: vy / dist };
 }
 
-function arrange(targets: NudgeTarget[], clientPt: { x: number; y: number } | null): NudgeTarget[] {
-  for (const t of targets) updateLabelPos(t);
-
-  for (let k = 0; k < ITER; k++) {
-    const torques = new Array(targets.length).fill(0);
-
-    for (let i = 0; i < targets.length; i++) {
-      const ti = targets[i];
-      let fx = 0;
-      let fy = 0;
-
-      // Label vs label — push apart along both axes if their boxes overlap.
-      for (let j = 0; j < targets.length; j++) {
-        if (i === j) continue;
-        const tj = targets[j];
-        const ex = ti.x - tj.x;
-        const ey = ti.y - tj.y;
-        if (Math.abs(ex) < MIN_DX && Math.abs(ey) < MIN_DY) {
-          const sx = ex === 0 ? (i < j ? -1 : 1) : Math.sign(ex);
-          const sy = ey === 0 ? (i < j ? -1 : 1) : Math.sign(ey);
-          fx += sx * (MIN_DX - Math.abs(ex)) * 0.35;
-          fy += sy * (MIN_DY - Math.abs(ey)) * 0.55;
-        }
-      }
-
-      // Label vs any non-anchor dot — radial push.
-      for (let j = 0; j < targets.length; j++) {
-        if (i === j) continue;
-        const tj = targets[j];
-        const ex = ti.x - tj.dotX;
-        const ey = ti.y - tj.dotY;
-        const d = Math.hypot(ex, ey);
-        if (d < DOT_CLEAR) {
-          const push = DOT_CLEAR - d;
-          const nx = d === 0 ? 1 : ex / d;
-          const ny = d === 0 ? 0 : ey / d;
-          fx += nx * push * 0.9;
-          fy += ny * push * 0.9;
-        }
-      }
-
-      // Label vs connector lines from client to every OTHER edge. Skip
-      // this label's own line (we're supposed to sit near it).
-      if (clientPt) {
-        for (let j = 0; j < targets.length; j++) {
-          if (targets[j].key === "__you") continue;
-          if (j === i) continue;
-          const r = perpRepel(
-            ti.x, ti.y,
-            clientPt.x, clientPt.y,
-            targets[j].dotX, targets[j].dotY,
-          );
-          if (r && r.dist < LINE_CLEAR) {
-            const push = LINE_CLEAR - r.dist;
-            fx += r.nx * push * 0.6;
-            fy += r.ny * push * 0.6;
-          }
-        }
-      }
-
-      // Convert linear force into rotational torque around the anchor.
-      // τ = r × F ; positive τ rotates the bead counter-clockwise.
-      const ox = ti.x - ti.ax;
-      const oy = ti.y - ti.ay;
-      torques[i] = (ox * fy - oy * fx) / (LABEL_RADIUS * LABEL_RADIUS);
-    }
-
-    // Weak angular spring back to the preferred resting direction.
-    for (let i = 0; i < targets.length; i++) {
-      let diff = targets[i].angleBias - targets[i].angle;
-      while (diff > Math.PI) diff -= 2 * Math.PI;
-      while (diff < -Math.PI) diff += 2 * Math.PI;
-      torques[i] += diff * SPRING_BACK;
-    }
-
-    for (let i = 0; i < targets.length; i++) {
-      targets[i].angle += torques[i] * TORQUE_SCALE;
-      updateLabelPos(targets[i]);
-    }
-  }
-  return targets;
+function labelPos(l: LabelBody): { x: number; y: number } {
+  return { x: l.ax + l.radius * Math.cos(l.angle), y: l.ay + l.radius * Math.sin(l.angle) };
 }
 
-// Angles in SVG space: 0 = right, π/2 = down, −π/2 = up.
-const EDGE_BIAS = Math.PI / 2;   // edge labels prefer sitting below their dot
-const YOU_BIAS = -Math.PI / 2;   // the viewer's label prefers to sit above
-
-const laidOut = computed(() => {
-  const targets: NudgeTarget[] = rawMapEdges.value.map((e) => ({
-    key: e.edge_id,
-    ax: e.x,
-    ay: e.y,
-    angle: EDGE_BIAS,
-    angleBias: EDGE_BIAS,
-    x: e.x,
-    y: e.y + LABEL_RADIUS,
-    dotX: e.x,
-    dotY: e.y,
-  }));
-  if (clientPointRaw.value) {
-    targets.push({
-      key: "__you",
-      ax: clientPointRaw.value.x,
-      ay: clientPointRaw.value.y,
-      angle: YOU_BIAS,
-      angleBias: YOU_BIAS,
-      x: clientPointRaw.value.x,
-      y: clientPointRaw.value.y - LABEL_RADIUS,
-      dotX: clientPointRaw.value.x,
-      dotY: clientPointRaw.value.y,
-    });
+function syncBodies(): void {
+  const nextLabels: Record<string, LabelBody> = {};
+  for (const e of rawMapEdges.value) {
+    const prev = labelBodies.value[e.edge_id];
+    nextLabels[e.edge_id] = prev
+      ? { ...prev, ax: e.x, ay: e.y, dotX: e.x, dotY: e.y }
+      : {
+          key: e.edge_id,
+          ax: e.x, ay: e.y, dotX: e.x, dotY: e.y,
+          angle: EDGE_BIAS, angleBias: EDGE_BIAS,
+          radius: LABEL_RADIUS, angleV: 0, radiusV: 0,
+        };
   }
-  arrange(
-    targets,
-    clientPointRaw.value
-      ? { x: clientPointRaw.value.x, y: clientPointRaw.value.y }
-      : null,
-  );
-  const byKey: Record<string, NudgeTarget> = {};
-  for (const t of targets) byKey[t.key] = t;
-  return byKey;
+  if (clientPointRaw.value) {
+    const prev = labelBodies.value["__you"];
+    nextLabels["__you"] = prev
+      ? { ...prev,
+          ax: clientPointRaw.value.x, ay: clientPointRaw.value.y,
+          dotX: clientPointRaw.value.x, dotY: clientPointRaw.value.y }
+      : {
+          key: "__you",
+          ax: clientPointRaw.value.x, ay: clientPointRaw.value.y,
+          dotX: clientPointRaw.value.x, dotY: clientPointRaw.value.y,
+          angle: YOU_BIAS, angleBias: YOU_BIAS,
+          radius: LABEL_RADIUS, angleV: 0, radiusV: 0,
+        };
+  }
+  labelBodies.value = nextLabels;
+
+  const nextLines: Record<string, LineBody> = {};
+  for (const e of rawMapEdges.value) {
+    nextLines[e.edge_id] = lineBodies.value[e.edge_id] ?? {
+      edgeId: e.edge_id,
+      bendX: 0, bendY: 0, bendVX: 0, bendVY: 0,
+    };
+  }
+  lineBodies.value = nextLines;
+}
+
+watch([rawMapEdges, clientPointRaw], () => syncBodies(), { immediate: true });
+
+function vbFromEvent(ev: PointerEvent): { x: number; y: number } {
+  const el = mapInnerEl.value;
+  if (!el) return { x: 0, y: 0 };
+  const r = el.getBoundingClientRect();
+  return {
+    x: ((ev.clientX - r.left) / r.width) * 360,
+    y: ((ev.clientY - r.top) / r.height) * 180,
+  };
+}
+
+function startLabelDrag(ev: PointerEvent, key: string): void {
+  ev.preventDefault();
+  const t = ev.currentTarget as HTMLElement | null;
+  t?.setPointerCapture?.(ev.pointerId);
+  const pt = vbFromEvent(ev);
+  dragState.value = { kind: "label", key, vbX: pt.x, vbY: pt.y };
+}
+
+function startLineDrag(ev: PointerEvent, edgeId: string): void {
+  ev.preventDefault();
+  const t = ev.currentTarget as SVGElement | null;
+  t?.setPointerCapture?.(ev.pointerId);
+  const pt = vbFromEvent(ev);
+  dragState.value = { kind: "line", key: edgeId, vbX: pt.x, vbY: pt.y };
+}
+
+function onWindowPointerMove(ev: PointerEvent): void {
+  if (!dragState.value) return;
+  const pt = vbFromEvent(ev);
+  dragState.value = { ...dragState.value, vbX: pt.x, vbY: pt.y };
+}
+
+function onWindowPointerUp(): void {
+  dragState.value = null;
+}
+
+function step(ts: number): void {
+  const dt = lastStepTs ? Math.min((ts - lastStepTs) / 1000, MAX_DT) : 0;
+  lastStepTs = ts;
+  const damp = Math.exp(-DAMP_PER_SEC * dt);
+  const labels = Object.values(labelBodies.value);
+  const drag = dragState.value;
+
+  // 1. Dragged label follows cursor; derive velocity for release wobble.
+  for (const l of labels) {
+    if (drag?.kind === "label" && drag.key === l.key) {
+      const dx = drag.vbX - l.ax;
+      const dy = drag.vbY - l.ay;
+      const r = Math.hypot(dx, dy);
+      const a = r === 0 ? l.angle : Math.atan2(dy, dx);
+      let diff = a - l.angle;
+      while (diff > Math.PI) diff -= 2 * Math.PI;
+      while (diff < -Math.PI) diff += 2 * Math.PI;
+      if (dt > 0) {
+        l.angleV = diff / dt;
+        l.radiusV = (r - l.radius) / dt;
+      }
+      l.angle += diff;
+      l.radius = Math.max(2, Math.min(60, r));
+    }
+  }
+
+  // 2. Free labels: forces → torque + radial spring; integrate with damping.
+  for (const a of labels) {
+    if (drag?.kind === "label" && drag.key === a.key) continue;
+    const apos = labelPos(a);
+    let fx = 0, fy = 0;
+
+    for (const b of labels) {
+      if (a.key === b.key) continue;
+      const bpos = labelPos(b);
+      const ex = apos.x - bpos.x, ey = apos.y - bpos.y;
+      if (Math.abs(ex) < MIN_DX && Math.abs(ey) < MIN_DY) {
+        const sx = ex === 0 ? -1 : Math.sign(ex);
+        const sy = ey === 0 ? -1 : Math.sign(ey);
+        fx += sx * (MIN_DX - Math.abs(ex)) * 0.30;
+        fy += sy * (MIN_DY - Math.abs(ey)) * 0.50;
+      }
+      const dex = apos.x - b.dotX, dey = apos.y - b.dotY;
+      const dd = Math.hypot(dex, dey);
+      if (dd < DOT_CLEAR && dd > 0) {
+        const push = DOT_CLEAR - dd;
+        fx += (dex / dd) * push * 1.0;
+        fy += (dey / dd) * push * 1.0;
+      }
+    }
+
+    const cli = labelBodies.value["__you"];
+    if (cli) {
+      for (const b of labels) {
+        if (b.key === "__you" || b.key === a.key) continue;
+        const r = perpRepel(apos.x, apos.y, cli.dotX, cli.dotY, b.dotX, b.dotY);
+        if (r && r.dist < LINE_CLEAR) {
+          const push = LINE_CLEAR - r.dist;
+          fx += r.nx * push * 0.6;
+          fy += r.ny * push * 0.6;
+        }
+      }
+    }
+
+    const ox = a.radius * Math.cos(a.angle);
+    const oy = a.radius * Math.sin(a.angle);
+    const torque = (ox * fy - oy * fx) / Math.max(a.radius * a.radius, 1);
+
+    let angleDiff = a.angleBias - a.angle;
+    while (angleDiff > Math.PI) angleDiff -= 2 * Math.PI;
+    while (angleDiff < -Math.PI) angleDiff += 2 * Math.PI;
+
+    const angleAccel = torque * TORQUE_GAIN + angleDiff * ANGLE_SPRING;
+    const radiusAccel = (LABEL_RADIUS - a.radius) * RADIUS_SPRING;
+
+    a.angleV = (a.angleV + angleAccel * dt) * damp;
+    a.radiusV = (a.radiusV + radiusAccel * dt) * damp;
+    a.angle += a.angleV * dt;
+    a.radius += a.radiusV * dt;
+    a.radius = Math.max(4, Math.min(40, a.radius));
+  }
+
+  // 3. Lines: dragged → bend follows cursor; free → bend springs back.
+  const cli = labelBodies.value["__you"];
+  for (const ln of Object.values(lineBodies.value)) {
+    const edge = labelBodies.value[ln.edgeId];
+    if (!edge || !cli) { ln.bendX = 0; ln.bendY = 0; ln.bendVX = 0; ln.bendVY = 0; continue; }
+    const mx = 0.5 * (cli.dotX + edge.dotX);
+    const my = 0.5 * (cli.dotY + edge.dotY);
+    if (drag?.kind === "line" && drag.key === ln.edgeId) {
+      const newBx = drag.vbX - mx;
+      const newBy = drag.vbY - my;
+      if (dt > 0) {
+        ln.bendVX = (newBx - ln.bendX) / dt;
+        ln.bendVY = (newBy - ln.bendY) / dt;
+      }
+      ln.bendX = newBx;
+      ln.bendY = newBy;
+    } else {
+      const aX = -ln.bendX * BEND_SPRING;
+      const aY = -ln.bendY * BEND_SPRING;
+      ln.bendVX = (ln.bendVX + aX * dt) * damp;
+      ln.bendVY = (ln.bendVY + aY * dt) * damp;
+      ln.bendX += ln.bendVX * dt;
+      ln.bendY += ln.bendVY * dt;
+    }
+  }
+
+  rafId = requestAnimationFrame(step);
+}
+
+onMounted(() => {
+  window.addEventListener("pointermove", onWindowPointerMove);
+  window.addEventListener("pointerup", onWindowPointerUp);
+  window.addEventListener("pointercancel", onWindowPointerUp);
+  rafId = requestAnimationFrame(step);
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener("pointermove", onWindowPointerMove);
+  window.removeEventListener("pointerup", onWindowPointerUp);
+  window.removeEventListener("pointercancel", onWindowPointerUp);
+  if (rafId) cancelAnimationFrame(rafId);
 });
 
 const mapEdges = computed<MapEdge[]>(() =>
   rawMapEdges.value.map((e) => {
-    const t = laidOut.value[e.edge_id];
-    return { ...e, lx: t?.x ?? e.x, ly: t?.y ?? e.y + LABEL_RADIUS };
+    const body = labelBodies.value[e.edge_id];
+    const p = body ? labelPos(body) : { x: e.x, y: e.y + LABEL_RADIUS };
+    return { ...e, lx: p.x, ly: p.y };
   })
 );
 
 const clientPoint = computed(() => {
   if (!clientPointRaw.value) return null;
-  const t = laidOut.value["__you"];
-  return {
-    ...clientPointRaw.value,
-    lx: t?.x ?? clientPointRaw.value.x,
-    ly: t?.y ?? clientPointRaw.value.y - LABEL_RADIUS,
-  };
+  const body = labelBodies.value["__you"];
+  const p = body ? labelPos(body) : { x: clientPointRaw.value.x, y: clientPointRaw.value.y - LABEL_RADIUS };
+  return { ...clientPointRaw.value, lx: p.x, ly: p.y };
+});
+
+type MapLine = { edge_id: string; status: "healthy" | "degraded" | "offline"; d: string };
+
+const mapLines = computed<MapLine[]>(() => {
+  const cli = clientPointRaw.value;
+  if (!cli) return [];
+  return rawMapEdges.value.map((e) => {
+    const bend = lineBodies.value[e.edge_id];
+    const mx = 0.5 * (cli.x + e.x);
+    const my = 0.5 * (cli.y + e.y);
+    const bx = bend?.bendX ?? 0;
+    const by = bend?.bendY ?? 0;
+    // For a quadratic Bézier P0–P1–P2, the point at t=0.5 is
+    // (P0 + 2·P1 + P2) / 4. To place that midpoint at M + bend, we
+    // set the control point P1 = M + 2·bend.
+    const cx = mx + 2 * bx;
+    const cy = my + 2 * by;
+    return { edge_id: e.edge_id, status: e.status, d: `M ${cli.x} ${cli.y} Q ${cx} ${cy} ${e.x} ${e.y}` };
+  });
 });
 
 function regionLatencySparkline(edge: EdgeSummary): string {
@@ -662,19 +785,25 @@ function regionLatencySparkline(edge: EdgeSummary): string {
                  Inner wrapper holds the aspect-ratio so labels and SVG
                  share a single coordinate system. -->
             <div class="sd-map" aria-hidden="true">
-              <div class="sd-map-inner">
+              <div class="sd-map-inner" ref="mapInnerEl">
                 <img src="/world-land.svg" class="sd-map-bg" alt="" decoding="async" />
                 <svg class="sd-map-svg" viewBox="0 0 360 180" preserveAspectRatio="none">
                   <template v-if="clientPoint">
-                    <line
-                      v-for="e in mapEdges"
-                      :key="`line-${e.edge_id}`"
-                      :x1="clientPoint.x"
-                      :y1="clientPoint.y"
-                      :x2="e.x"
-                      :y2="e.y"
+                    <!-- Fat transparent hit path behind each visible line so
+                         users can grab anywhere along it and pull. -->
+                    <path
+                      v-for="line in mapLines"
+                      :key="`hit-${line.edge_id}`"
+                      :d="line.d"
+                      class="sd-map-link-hit"
+                      @pointerdown="(ev) => startLineDrag(ev, line.edge_id)"
+                    />
+                    <path
+                      v-for="line in mapLines"
+                      :key="`line-${line.edge_id}`"
+                      :d="line.d"
                       class="sd-map-link"
-                      :class="[`sd-map-link-${e.status}`]"
+                      :class="[`sd-map-link-${line.status}`]"
                     />
                   </template>
                   <g v-for="e in mapEdges" :key="`edge-${e.edge_id}`">
@@ -690,8 +819,9 @@ function regionLatencySparkline(edge: EdgeSummary): string {
                   v-for="e in mapEdges"
                   :key="`label-${e.edge_id}`"
                   class="sd-map-label"
-                  :class="[`sd-map-label-${e.status}`]"
+                  :class="[`sd-map-label-${e.status}`, { 'sd-map-label-drag': dragState?.kind === 'label' && dragState.key === e.edge_id }]"
                   :style="{ left: `${e.lx / 3.6}%`, top: `${e.ly / 1.8}%` }"
+                  @pointerdown="(ev) => startLabelDrag(ev, e.edge_id)"
                 >
                   <span class="sd-map-label-code">{{ e.edge_id }}</span>
                   <span class="sd-map-label-rtt">{{ e.rtt }}<span class="sd-map-label-unit"> {{ e.rtt_unit }}</span></span>
@@ -699,7 +829,9 @@ function regionLatencySparkline(edge: EdgeSummary): string {
                 <div
                   v-if="clientPoint"
                   class="sd-map-you-label"
+                  :class="{ 'sd-map-label-drag': dragState?.kind === 'label' && dragState.key === '__you' }"
                   :style="{ left: `${clientPoint.lx / 3.6}%`, top: `${clientPoint.ly / 1.8}%` }"
+                  @pointerdown="(ev) => startLabelDrag(ev, '__you')"
                 >
                   you · {{ clientPoint.city }}
                 </div>
