@@ -937,11 +937,11 @@ body {
   /* Thin dotted line: 0.6u dash + 3u gap with round linecap gives a
    * subtle trail of dots rather than a heavy chain. */
   stroke: #ef6f2e;
-  stroke-width: 1.4;
+  stroke-width: 0.7;
   stroke-linecap: round;
-  stroke-dasharray: 0.6 3;
+  stroke-dasharray: 0.35 2.2;
   fill: none;
-  opacity: 0.9;
+  opacity: 0.85;
 }
 .sd-map-link-offline { opacity: 0.35; }
 
