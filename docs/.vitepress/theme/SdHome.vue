@@ -385,13 +385,13 @@ const clientPointRaw = computed(() => {
 // the velocity built up during drag carries through on release, so the
 // label wobbles back like a pendulum. Lines are quadratic Béziers with a
 // draggable midpoint that springs back the same way.
-const LABEL_RADIUS = 9;       // rest distance from dot to label center
-const MIN_DX = 30;            // label-label overlap threshold (x, of 360)
-const MIN_DY = 13;            // label-label overlap threshold (y, of 180)
-const DOT_CLEAR = 8;          // keep labels this far from non-anchor dots
+const LABEL_RADIUS = 13;      // rest distance from dot to label center
+const MIN_DX = 34;            // label-label overlap threshold (x, of 360)
+const MIN_DY = 16;            // label-label overlap threshold (y, of 180)
+const DOT_CLEAR = 9;          // keep labels this far from non-anchor dots
 const LINE_CLEAR = 6;         // keep labels this far from connector lines
 
-const DAMP_PER_SEC = 3.8;     // v *= exp(-DAMP_PER_SEC·dt) — wobble decay
+const DAMP_PER_SEC = 38.0;    // v *= exp(-DAMP_PER_SEC·dt) — wobble decay
 const ANGLE_SPRING = 6.0;     // rad/s² per rad offset from bias
 const RADIUS_SPRING = 60.0;   // u/s² per unit offset from rest radius
 const BEND_SPRING = 36.0;     // u/s² per unit of line bend
