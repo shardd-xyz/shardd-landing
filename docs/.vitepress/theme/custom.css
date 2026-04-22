@@ -934,14 +934,16 @@ body {
 }
 
 .sd-map-link {
-  stroke: var(--color-base-600);
-  stroke-width: 0.8;
-  stroke-dasharray: 3 2;
-  opacity: 0.7;
+  /* True dotted stroke: zero-length dashes with round linecap draw as dots.
+   * Orange always — the color already reinforces "this is YOUR ping", so
+   * we don't re-color by status (that's what the status dots are for). */
+  stroke: var(--color-accent-100);
+  stroke-width: 1;
+  stroke-linecap: round;
+  stroke-dasharray: 0 3;
+  opacity: 0.9;
 }
-.sd-map-link-healthy { stroke: var(--color-accent-100); opacity: 0.85; }
-.sd-map-link-degraded { stroke: #fbbf24; opacity: 0.8; }
-.sd-map-link-offline { stroke: var(--color-base-700); opacity: 0.4; }
+.sd-map-link-offline { opacity: 0.35; }
 
 .sd-map-edge {
   fill: var(--color-base-600);
