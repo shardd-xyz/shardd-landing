@@ -934,15 +934,14 @@ body {
 }
 
 .sd-map-link {
-  /* Dotted stroke: a dash of length 0.5 with a 5-unit gap (and round
-   * linecap) renders as circular dots across most browsers. Some engines
-   * drop a pure 0-length dash, hence the small positive value. Width is
-   * in SVG viewBox units (360×180). */
+  /* Dotted via visible dashes (1.2u dash + 5u gap, round linecap). Pure
+   * 0-length dashes render inconsistently in Chromium under non-uniform
+   * scaling; a small positive dash with round linecap gives dots that
+   * render reliably everywhere. */
   stroke: var(--color-accent-100);
-  stroke-width: 2.5;
+  stroke-width: 3;
   stroke-linecap: round;
-  stroke-linejoin: round;
-  stroke-dasharray: 0.5 6;
+  stroke-dasharray: 1.2 5;
   fill: none;
   opacity: 1;
 }
