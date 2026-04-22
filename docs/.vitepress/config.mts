@@ -1,4 +1,18 @@
 import { defineConfig } from "vitepress";
+import { execSync } from "node:child_process";
+
+// Resolve the commit hash at build time so the footer can link to the
+// exact deployed version. Prefer GITHUB_SHA (set by the Pages workflow);
+// fall back to `git rev-parse` for local builds. "unknown" on failure.
+const commitSha = (() => {
+  if (process.env.GITHUB_SHA) return process.env.GITHUB_SHA;
+  try {
+    return execSync("git rev-parse HEAD").toString().trim();
+  } catch {
+    return "unknown";
+  }
+})();
+const commitShort = commitSha.slice(0, 7);
 
 export default defineConfig({
   title: "shardd",
@@ -37,7 +51,7 @@ export default defineConfig({
     ],
     socialLinks: [{ icon: "github", link: "https://github.com/sssemil/shardd" }],
     footer: {
-      message: '<a href="https://app.shardd.xyz/tos" style="color:inherit">Terms</a> · <a href="https://app.shardd.xyz/privacy" style="color:inherit">Privacy</a> · <a href="mailto:contact@tqdm.org" style="color:inherit">Contact</a>',
+      message: `<a href="https://app.shardd.xyz/tos" style="color:inherit">Terms</a> · <a href="https://app.shardd.xyz/privacy" style="color:inherit">Privacy</a> · <a href="mailto:contact@tqdm.org" style="color:inherit">Contact</a> · <a href="https://github.com/shardd-xyz/shardd-landing/commit/${commitSha}" target="_blank" rel="noopener" style="color:inherit;opacity:0.7" title="${commitSha}">build ${commitShort}</a>`,
       copyright: "© 2026 TQDM Inc.",
     },
     sidebar: [
