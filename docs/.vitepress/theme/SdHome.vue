@@ -346,12 +346,15 @@ type MapEdge = {
   label: string;
   x: number;
   y: number;
+  lx: number; // label position after collision-avoidance
+  ly: number;
   status: "healthy" | "degraded" | "offline";
   rtt: string;
   rtt_unit: string;
 };
 
-const mapEdges = computed<MapEdge[]>(() =>
+// Raw edge positions (before label nudging).
+const rawMapEdges = computed(() =>
   edges.value.map((e) => {
     const geo = EDGE_COORDS[e.edge_id] ?? { lat: 0, lon: 0, label: e.region };
     const { x, y } = project(geo.lat, geo.lon);
@@ -367,11 +370,88 @@ const mapEdges = computed<MapEdge[]>(() =>
   })
 );
 
-const clientPoint = computed(() => {
+const clientPointRaw = computed(() => {
   const c = clientCoords.value;
   if (!c) return null;
   const { x, y } = project(c.lat, c.lon);
   return { ...c, x, y };
+});
+
+// Anti-gravity label layout. Labels start at their anchor dot (offset
+// slightly below), then a few passes of pairwise repulsion push them
+// apart along the y-axis so they never stack on top of each other.
+// Labels still pull back toward their anchor so the connection stays
+// visually obvious.
+const MIN_DX = 35; // SVG units (of 360) — ~10% of map width
+const MIN_DY = 16; // SVG units (of 180) — ~9% of map height
+const ITER = 30;
+const LABEL_BELOW = 8; // initial offset below the dot
+const YOU_ABOVE = 7;   // client label starts above its dot
+
+type NudgeTarget = { key: string; ax: number; ay: number; x: number; y: number };
+
+function arrange(targets: NudgeTarget[]): NudgeTarget[] {
+  for (let k = 0; k < ITER; k++) {
+    for (let i = 0; i < targets.length; i++) {
+      let dy = 0;
+      for (let j = 0; j < targets.length; j++) {
+        if (i === j) continue;
+        const ex = targets[i].x - targets[j].x;
+        const ey = targets[i].y - targets[j].y;
+        if (Math.abs(ex) < MIN_DX && Math.abs(ey) < MIN_DY) {
+          const direction = ey === 0 ? (i < j ? -1 : 1) : Math.sign(ey);
+          dy += (MIN_DY - Math.abs(ey)) * direction * 0.5;
+        }
+      }
+      targets[i].y += dy * 0.35;
+      // Weak spring back so labels stay near their anchor rather than
+      // drifting to the edge of the map.
+      targets[i].y += (targets[i].ay - targets[i].y) * 0.04;
+      // Keep labels inside the map bounds (with a small margin for text).
+      targets[i].y = Math.max(6, Math.min(172, targets[i].y));
+    }
+  }
+  return targets;
+}
+
+const laidOut = computed(() => {
+  const targets: NudgeTarget[] = rawMapEdges.value.map((e) => ({
+    key: e.edge_id,
+    ax: e.x,
+    ay: e.y + LABEL_BELOW,
+    x: e.x,
+    y: e.y + LABEL_BELOW,
+  }));
+  if (clientPointRaw.value) {
+    targets.push({
+      key: "__you",
+      ax: clientPointRaw.value.x,
+      ay: clientPointRaw.value.y - YOU_ABOVE,
+      x: clientPointRaw.value.x,
+      y: clientPointRaw.value.y - YOU_ABOVE,
+    });
+  }
+  arrange(targets);
+  const byKey: Record<string, NudgeTarget> = {};
+  for (const t of targets) byKey[t.key] = t;
+  return byKey;
+});
+
+const mapEdges = computed<MapEdge[]>(() =>
+  rawMapEdges.value.map((e) => {
+    const t = laidOut.value[e.edge_id];
+    return { ...e, lx: t?.x ?? e.x, ly: t?.y ?? e.y + LABEL_BELOW };
+  })
+);
+
+const clientPoint = computed(() => {
+  if (!clientPointRaw.value) return null;
+  const t = laidOut.value["__you"];
+  return {
+    ...clientPointRaw.value,
+    lx: t?.x ?? clientPointRaw.value.x,
+    ly: t?.y ?? clientPointRaw.value.y - YOU_ABOVE,
+  };
 });
 
 function regionLatencySparkline(edge: EdgeSummary): string {
@@ -486,7 +566,7 @@ function regionLatencySparkline(edge: EdgeSummary): string {
                   :key="`label-${e.edge_id}`"
                   class="sd-map-label"
                   :class="[`sd-map-label-${e.status}`]"
-                  :style="{ left: `${e.x / 3.6}%`, top: `${e.y / 1.8}%` }"
+                  :style="{ left: `${e.lx / 3.6}%`, top: `${e.ly / 1.8}%` }"
                 >
                   <span class="sd-map-label-code">{{ e.edge_id }}</span>
                   <span class="sd-map-label-rtt">{{ e.rtt }}<span class="sd-map-label-unit"> {{ e.rtt_unit }}</span></span>
@@ -494,7 +574,7 @@ function regionLatencySparkline(edge: EdgeSummary): string {
                 <div
                   v-if="clientPoint"
                   class="sd-map-you-label"
-                  :style="{ left: `${clientPoint.x / 3.6}%`, top: `${clientPoint.y / 1.8}%` }"
+                  :style="{ left: `${clientPoint.lx / 3.6}%`, top: `${clientPoint.ly / 1.8}%` }"
                 >
                   you · {{ clientPoint.city }}
                 </div>
@@ -503,6 +583,7 @@ function regionLatencySparkline(edge: EdgeSummary): string {
             <p class="sd-map-caption">
               <span v-if="clientPoint">Ping from your browser ({{ clientPoint.city }}) to each edge · refreshes every 2.5s.</span>
               <span v-else>Ping from your browser to each public edge · refreshes every 2.5s.</span>
+              <span class="sd-map-contact">Need a region added? <a href="mailto:emil@tqdm.org?subject=shardd%20region%20request">emil@tqdm.org</a></span>
             </p>
             </div>
 
