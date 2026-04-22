@@ -408,8 +408,15 @@ const labelHalfH = ref(9);
 const youHalfW = ref(20);
 const youHalfH = ref(7);
 
-const EDGE_BIAS = Math.PI / 2;   // edge labels prefer sitting below dot
-const YOU_BIAS = -Math.PI / 2;   // viewer label prefers sitting above
+// Each label's resting angle points OUTWARD from the map center, so
+// labels visually lean toward the nearest edge of the map — like
+// they're leaking off the page rather than clustering around the dots.
+function outwardAngle(ax: number, ay: number): number {
+  const dx = ax - 180;
+  const dy = ay - 90;
+  if (Math.abs(dx) < 0.01 && Math.abs(dy) < 0.01) return Math.PI / 2;
+  return Math.atan2(dy, dx);
+}
 
 type LabelBody = {
   key: string;
@@ -509,26 +516,27 @@ function syncBodies(): void {
   const nextLabels: Record<string, LabelBody> = {};
   for (const e of rawMapEdges.value) {
     const prev = labelBodies.value[e.edge_id];
+    const bias = outwardAngle(e.x, e.y);
     nextLabels[e.edge_id] = prev
-      ? { ...prev, ax: e.x, ay: e.y, dotX: e.x, dotY: e.y }
+      ? { ...prev, ax: e.x, ay: e.y, dotX: e.x, dotY: e.y, angleBias: bias }
       : {
           key: e.edge_id,
           ax: e.x, ay: e.y, dotX: e.x, dotY: e.y,
-          angle: EDGE_BIAS, angleBias: EDGE_BIAS,
+          angle: bias, angleBias: bias,
           radius: LABEL_RADIUS, angleV: 0, radiusV: 0,
         };
   }
   if (clientPointRaw.value) {
     const prev = labelBodies.value["__you"];
+    const cx = clientPointRaw.value.x;
+    const cy = clientPointRaw.value.y;
+    const bias = outwardAngle(cx, cy);
     nextLabels["__you"] = prev
-      ? { ...prev,
-          ax: clientPointRaw.value.x, ay: clientPointRaw.value.y,
-          dotX: clientPointRaw.value.x, dotY: clientPointRaw.value.y }
+      ? { ...prev, ax: cx, ay: cy, dotX: cx, dotY: cy, angleBias: bias }
       : {
           key: "__you",
-          ax: clientPointRaw.value.x, ay: clientPointRaw.value.y,
-          dotX: clientPointRaw.value.x, dotY: clientPointRaw.value.y,
-          angle: YOU_BIAS, angleBias: YOU_BIAS,
+          ax: cx, ay: cy, dotX: cx, dotY: cy,
+          angle: bias, angleBias: bias,
           radius: LABEL_RADIUS, angleV: 0, radiusV: 0,
         };
   }
