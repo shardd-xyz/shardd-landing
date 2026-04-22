@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, computed, watch } from "vue";
+import { ref, onMounted, onBeforeUnmount, computed, watch, nextTick } from "vue";
 
 // Shape matches libs/types::PublicEdgeSummary plus browser-measured RTT.
 type EdgeSummary = {
@@ -385,18 +385,28 @@ const clientPointRaw = computed(() => {
 // the velocity built up during drag carries through on release, so the
 // label wobbles back like a pendulum. Lines are quadratic Béziers with a
 // draggable midpoint that springs back the same way.
-const LABEL_RADIUS = 13;      // rest distance from dot to label center
-const MIN_DX = 34;            // label-label overlap threshold (x, of 360)
-const MIN_DY = 16;            // label-label overlap threshold (y, of 180)
-const DOT_CLEAR = 9;          // keep labels this far from non-anchor dots
+const LABEL_RADIUS = 14;      // rest distance from dot to label center
+const AVOID_MARGIN = 0.10;    // keep-out buffer as fraction of object size
 const LINE_CLEAR = 6;         // keep labels this far from connector lines
+const EDGE_DOT_R = 5;         // edge dot halo radius (viewBox u)
+const YOU_DOT_R = 6;          // viewer dot halo radius
 
 const DAMP_PER_SEC = 38.0;    // v *= exp(-DAMP_PER_SEC·dt) — wobble decay
 const ANGLE_SPRING = 6.0;     // rad/s² per rad offset from bias
 const RADIUS_SPRING = 60.0;   // u/s² per unit offset from rest radius
 const BEND_SPRING = 36.0;     // u/s² per unit of line bend
-const TORQUE_GAIN = 75.0;     // force→angular-accel multiplier
+const TORQUE_GAIN = 75.0;     // tangential-force → angular-accel multiplier
+const RADIAL_GAIN = 60.0;     // radial-force → radial-accel multiplier
+const REPEL_STRENGTH = 6.0;   // multiplier on penetration-depth forces
 const MAX_DT = 0.05;
+
+// Label half-sizes in viewBox units — measured from the DOM on mount.
+// Defaults roughly match current styling so the first frame looks sane
+// even before the measurement runs.
+const labelHalfW = ref(13);
+const labelHalfH = ref(9);
+const youHalfW = ref(20);
+const youHalfH = ref(7);
 
 const EDGE_BIAS = Math.PI / 2;   // edge labels prefer sitting below dot
 const YOU_BIAS = -Math.PI / 2;   // viewer label prefers sitting above
@@ -463,6 +473,36 @@ function perpRepel(
 
 function labelPos(l: LabelBody): { x: number; y: number } {
   return { x: l.ax + l.radius * Math.cos(l.angle), y: l.ay + l.radius * Math.sin(l.angle) };
+}
+
+function halfSize(key: string): { hw: number; hh: number } {
+  if (key === "__you") return { hw: youHalfW.value, hh: youHalfH.value };
+  return { hw: labelHalfW.value, hh: labelHalfH.value };
+}
+
+function dotRadius(key: string): number {
+  return key === "__you" ? YOU_DOT_R : EDGE_DOT_R;
+}
+
+/// Measure each label's actual rendered size and convert to viewBox units
+/// so the collision math stays accurate when layout/font rendering
+/// differs from our rough defaults.
+function measureLabels(): void {
+  const el = mapInnerEl.value;
+  if (!el || el.clientWidth === 0) return;
+  const scale = 360 / el.clientWidth;
+  const edgeEl = el.querySelector(".sd-map-label") as HTMLElement | null;
+  if (edgeEl) {
+    const r = edgeEl.getBoundingClientRect();
+    labelHalfW.value = (r.width / 2) * scale;
+    labelHalfH.value = (r.height / 2) * scale;
+  }
+  const youEl = el.querySelector(".sd-map-you-label") as HTMLElement | null;
+  if (youEl) {
+    const r = youEl.getBoundingClientRect();
+    youHalfW.value = (r.width / 2) * scale;
+    youHalfH.value = (r.height / 2) * scale;
+  }
 }
 
 function syncBodies(): void {
@@ -568,31 +608,71 @@ function step(ts: number): void {
     }
   }
 
-  // 2. Free labels: forces → torque + radial spring; integrate with damping.
+  // 2. Free labels: forces → tangential torque + radial push; integrate.
+  // Collision model: each label is an AABB (measured pellet size) and
+  // each dot is a circle (halo radius). Keep-out buffer = object size ×
+  // (1 + AVOID_MARGIN) — 10% beyond actual extents. Penetration into
+  // that buffer produces a linear-in-depth force scaled by
+  // REPEL_STRENGTH so near-contact feels like a sharp bounce.
   for (const a of labels) {
     if (drag?.kind === "label" && drag.key === a.key) continue;
     const apos = labelPos(a);
+    const aSize = halfSize(a.key);
     let fx = 0, fy = 0;
 
+    // Label vs label (AABB with 10% margin).
     for (const b of labels) {
       if (a.key === b.key) continue;
       const bpos = labelPos(b);
-      const ex = apos.x - bpos.x, ey = apos.y - bpos.y;
-      if (Math.abs(ex) < MIN_DX && Math.abs(ey) < MIN_DY) {
-        const sx = ex === 0 ? -1 : Math.sign(ex);
-        const sy = ey === 0 ? -1 : Math.sign(ey);
-        fx += sx * (MIN_DX - Math.abs(ex)) * 0.30;
-        fy += sy * (MIN_DY - Math.abs(ey)) * 0.50;
-      }
-      const dex = apos.x - b.dotX, dey = apos.y - b.dotY;
-      const dd = Math.hypot(dex, dey);
-      if (dd < DOT_CLEAR && dd > 0) {
-        const push = DOT_CLEAR - dd;
-        fx += (dex / dd) * push * 1.0;
-        fy += (dey / dd) * push * 1.0;
+      const bSize = halfSize(b.key);
+      const gapX = (aSize.hw + bSize.hw) * (1 + AVOID_MARGIN);
+      const gapY = (aSize.hh + bSize.hh) * (1 + AVOID_MARGIN);
+      const dx = apos.x - bpos.x;
+      const dy = apos.y - bpos.y;
+      const penX = gapX - Math.abs(dx);
+      const penY = gapY - Math.abs(dy);
+      if (penX > 0 && penY > 0) {
+        // Separate along the axis of least penetration (standard AABB).
+        if (penX < penY) {
+          fx += (dx === 0 ? 1 : Math.sign(dx)) * penX * REPEL_STRENGTH;
+        } else {
+          fy += (dy === 0 ? 1 : Math.sign(dy)) * penY * REPEL_STRENGTH;
+        }
       }
     }
 
+    // Label vs every dot (AABB-vs-circle with 10% margin). Own anchor
+    // included — a nonzero radial repulsion pushes the label outward
+    // off its dot; the radial spring pulls it back, equilibrium sits
+    // just outside the threshold.
+    for (const b of labels) {
+      const threshold = dotRadius(b.key) * (1 + AVOID_MARGIN);
+      const cx = b.dotX, cy = b.dotY;
+      const clampX = Math.max(apos.x - aSize.hw, Math.min(cx, apos.x + aSize.hw));
+      const clampY = Math.max(apos.y - aSize.hh, Math.min(cy, apos.y + aSize.hh));
+      const dx = clampX - cx;
+      const dy = clampY - cy;
+      const d2 = dx * dx + dy * dy;
+      if (d2 < threshold * threshold) {
+        const d = Math.sqrt(d2);
+        if (d < 1e-3) {
+          // Dot center sits inside the box — push the label along the
+          // shortest-to-escape axis.
+          const ox = apos.x - cx;
+          const oy = apos.y - cy;
+          const nx = ox === 0 ? 0 : Math.sign(ox);
+          const ny = oy === 0 ? 1 : Math.sign(oy);
+          fx += nx * threshold * REPEL_STRENGTH;
+          fy += ny * threshold * REPEL_STRENGTH;
+        } else {
+          const pen = threshold - d;
+          fx += (dx / d) * pen * REPEL_STRENGTH;
+          fy += (dy / d) * pen * REPEL_STRENGTH;
+        }
+      }
+    }
+
+    // Label vs OTHER connector lines (skip this label's own line).
     const cli = labelBodies.value["__you"];
     if (cli) {
       for (const b of labels) {
@@ -606,22 +686,25 @@ function step(ts: number): void {
       }
     }
 
-    const ox = a.radius * Math.cos(a.angle);
-    const oy = a.radius * Math.sin(a.angle);
-    const torque = (ox * fy - oy * fx) / Math.max(a.radius * a.radius, 1);
+    // Decompose world-space force into radial + tangential around the
+    // anchor. Tangential → torque (angle change); radial → radius change.
+    const cosA = Math.cos(a.angle);
+    const sinA = Math.sin(a.angle);
+    const radialF = fx * cosA + fy * sinA;
+    const tangentialF = -fx * sinA + fy * cosA;
 
     let angleDiff = a.angleBias - a.angle;
     while (angleDiff > Math.PI) angleDiff -= 2 * Math.PI;
     while (angleDiff < -Math.PI) angleDiff += 2 * Math.PI;
 
-    const angleAccel = torque * TORQUE_GAIN + angleDiff * ANGLE_SPRING;
-    const radiusAccel = (LABEL_RADIUS - a.radius) * RADIUS_SPRING;
+    const angleAccel = (tangentialF / Math.max(a.radius, 1)) * TORQUE_GAIN + angleDiff * ANGLE_SPRING;
+    const radiusAccel = (LABEL_RADIUS - a.radius) * RADIUS_SPRING + radialF * RADIAL_GAIN;
 
     a.angleV = (a.angleV + angleAccel * dt) * damp;
     a.radiusV = (a.radiusV + radiusAccel * dt) * damp;
     a.angle += a.angleV * dt;
     a.radius += a.radiusV * dt;
-    a.radius = Math.max(4, Math.min(40, a.radius));
+    a.radius = Math.max(4, Math.min(50, a.radius));
   }
 
   // 3. Lines: dragged → bend follows cursor; free → bend springs back.
@@ -657,13 +740,17 @@ onMounted(() => {
   window.addEventListener("pointermove", onWindowPointerMove);
   window.addEventListener("pointerup", onWindowPointerUp);
   window.addEventListener("pointercancel", onWindowPointerUp);
+  window.addEventListener("resize", measureLabels);
   rafId = requestAnimationFrame(step);
+  // Wait a paint so getBoundingClientRect reflects the final pellet size.
+  nextTick(() => measureLabels());
 });
 
 onBeforeUnmount(() => {
   window.removeEventListener("pointermove", onWindowPointerMove);
   window.removeEventListener("pointerup", onWindowPointerUp);
   window.removeEventListener("pointercancel", onWindowPointerUp);
+  window.removeEventListener("resize", measureLabels);
   if (rafId) cancelAnimationFrame(rafId);
 });
 
@@ -840,7 +927,7 @@ function regionLatencySparkline(edge: EdgeSummary): string {
             <p class="sd-map-caption">
               <span v-if="clientPoint">Ping from your browser ({{ clientPoint.city }}) to each edge · refreshes every 2.5s.</span>
               <span v-else>Ping from your browser to each public edge · refreshes every 2.5s.</span>
-              <span class="sd-map-contact">Need a region added? <a href="mailto:emil@tqdm.org?subject=shardd%20region%20request">emil@tqdm.org</a></span>
+              <span class="sd-map-contact">Need a region added? <a href="mailto:contact@tqdm.org?subject=shardd%20region%20request">contact@tqdm.org</a></span>
             </p>
             </div>
 
@@ -947,7 +1034,7 @@ function regionLatencySparkline(edge: EdgeSummary): string {
             </a>
             <a
               class="sd-btn sd-btn-ghost"
-              href="https://github.com/sssemil/shardd"
+              href="https://github.com/shardd-xyz"
             >
               GitHub
             </a>

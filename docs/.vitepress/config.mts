@@ -45,13 +45,12 @@ export default defineConfig({
     logo: "/logo-mark.svg",
     nav: [
       { text: "Docs", link: "/guide/quickstart" },
-      { text: "Architecture", link: "/guide/architecture" },
-      { text: "GitHub", link: "https://github.com/sssemil/shardd" },
+      { text: "GitHub", link: "https://github.com/shardd-xyz" },
       { text: "Login", link: "https://app.shardd.xyz" },
     ],
-    socialLinks: [{ icon: "github", link: "https://github.com/sssemil/shardd" }],
+    socialLinks: [{ icon: "github", link: "https://github.com/shardd-xyz" }],
     footer: {
-      message: `<a href="https://app.shardd.xyz/tos" style="color:inherit">Terms</a> · <a href="https://app.shardd.xyz/privacy" style="color:inherit">Privacy</a> · <a href="mailto:contact@tqdm.org" style="color:inherit">Contact</a> · <a href="https://github.com/shardd-xyz/shardd-landing/commit/${commitSha}" target="_blank" rel="noopener" style="color:inherit;opacity:0.7" title="${commitSha}">build ${commitShort}</a>`,
+      message: `<a href="https://app.shardd.xyz/tos" style="color:inherit">Terms</a> · <a href="https://app.shardd.xyz/privacy" style="color:inherit">Privacy</a> · <a href="mailto:contact@tqdm.org" style="color:inherit">Contact</a> · <a href="https://esnx.xyz" target="_blank" rel="noopener" style="color:inherit">Me</a> · <a href="https://github.com/shardd-xyz/shardd-landing/commit/${commitSha}" target="_blank" rel="noopener" style="color:inherit;opacity:0.7" title="${commitSha}">build ${commitShort}</a>`,
       copyright: "© 2026 TQDM Inc.",
     },
     sidebar: [
@@ -60,7 +59,6 @@ export default defineConfig({
         items: [
           { text: "Quickstart", link: "/guide/quickstart" },
           { text: "Public Edge Clients", link: "/guide/public-edge-clients" },
-          { text: "Architecture", link: "/guide/architecture" },
         ],
       },
     ],
