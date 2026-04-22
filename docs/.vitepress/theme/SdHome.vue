@@ -457,12 +457,13 @@ function arrange(targets: NudgeTarget[], clientPt: { x: number; y: number } | nu
           dx += (DOT_PAD_X - Math.abs(ex)) * dirX * 0.25;
         }
       }
-      // Label vs every connector line (client → each edge). The label's
-      // own anchor line goes from clientPt to (dotX, dotY) — we DON'T skip
-      // that one, since the label should sit alongside the line, not on it.
+      // Label vs OTHER connector lines only (skip the line that ends at
+      // this label's own anchor dot — the label sits near that line on
+      // purpose; pushing it away is what made USE1/EUC1 labels drift).
       if (clientPt) {
         for (let j = 0; j < targets.length; j++) {
-          if (targets[j].key === "__you") continue; // no line to self
+          if (targets[j].key === "__you") continue;     // no line to self
+          if (j === i) continue;                         // skip our own line
           const repel = perpRepel(
             targets[i].x, targets[i].y,
             clientPt.x, clientPt.y,
@@ -470,16 +471,18 @@ function arrange(targets: NudgeTarget[], clientPt: { x: number; y: number } | nu
           );
           if (repel && repel.dist < LINE_CLEAR) {
             const push = (LINE_CLEAR - repel.dist);
-            dx += repel.nx * push * 0.5;
-            dy += repel.ny * push * 0.5;
+            dx += repel.nx * push * 0.4;
+            dy += repel.ny * push * 0.4;
           }
         }
       }
       targets[i].y += dy * 0.3;
       targets[i].x += dx * 0.18;
-      // Weak spring back toward anchor.
-      targets[i].y += (targets[i].ay - targets[i].y) * 0.04;
-      targets[i].x += (targets[i].ax - targets[i].x) * 0.04;
+      // Stronger spring back to anchor — previous 0.04 let labels drift;
+      // 0.12 pulls them home within a few dozen iterations once the
+      // repulsion forces have done their work.
+      targets[i].y += (targets[i].ay - targets[i].y) * 0.12;
+      targets[i].x += (targets[i].ax - targets[i].x) * 0.12;
       // Clip to the map interior.
       targets[i].y = Math.max(6, Math.min(172, targets[i].y));
       targets[i].x = Math.max(12, Math.min(348, targets[i].x));
