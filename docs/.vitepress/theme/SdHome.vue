@@ -180,6 +180,8 @@ onMounted(() => {
   });
   refreshEdges();
   refetchTimer = window.setInterval(refreshEdges, REFETCH_INTERVAL_MS);
+  // One-shot IP geolocation for the "you" dot on the minimap.
+  resolveIpLocation();
 });
 
 onBeforeUnmount(() => {
@@ -296,7 +298,32 @@ const TZ_COORDS: Record<string, { lat: number; lon: number; city: string }> = {
   "Pacific/Auckland": { lat: -36.8, lon: 174.8, city: "Auckland" },
 };
 
+// IP geolocation (via ipapi.co, free + CORS-friendly). Falls back to the
+// timezone heuristic if the request fails (ad-blocker, rate limit,
+// offline) so the map still shows a dot in the most-likely-correct city.
+const ipCoords = ref<{ lat: number; lon: number; city: string } | null>(null);
+
+async function resolveIpLocation() {
+  try {
+    const res = await fetch("https://ipapi.co/json/", { cache: "force-cache" });
+    if (!res.ok) return;
+    const body = (await res.json()) as {
+      latitude?: number;
+      longitude?: number;
+      city?: string;
+      country_name?: string;
+    };
+    if (typeof body.latitude === "number" && typeof body.longitude === "number") {
+      const city = body.city?.trim() || body.country_name?.trim() || "your IP";
+      ipCoords.value = { lat: body.latitude, lon: body.longitude, city };
+    }
+  } catch {
+    // Swallow: the timezone fallback handles it.
+  }
+}
+
 const clientCoords = computed(() => {
+  if (ipCoords.value) return ipCoords.value;
   try {
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
     return TZ_COORDS[tz] ?? null;
@@ -422,6 +449,8 @@ function regionLatencySparkline(edge: EdgeSummary): string {
               </span>
             </header>
 
+            <div class="sd-regions-body">
+            <div class="sd-regions-body-left">
             <!-- Minimap: pre-rendered world-land.svg is the background;
                  dots + lines + labels overlay it in the same 360x180 coord
                  system so continents, edges and the viewer's dot agree.
@@ -475,7 +504,9 @@ function regionLatencySparkline(edge: EdgeSummary): string {
               <span v-if="clientPoint">Ping from your browser ({{ clientPoint.city }}) to each edge · refreshes every 2.5s.</span>
               <span v-else>Ping from your browser to each public edge · refreshes every 2.5s.</span>
             </p>
+            </div>
 
+            <div class="sd-regions-body-right">
             <ul class="sd-regions-list">
               <li
                 v-for="e in edges"
@@ -515,6 +546,8 @@ function regionLatencySparkline(edge: EdgeSummary): string {
                 </div>
               </li>
             </ul>
+            </div>
+            </div>
             <footer class="sd-regions-foot">
               <span v-if="meshState === 'live'">
                 live · browser ping /gateway/health · refresh 2.5s

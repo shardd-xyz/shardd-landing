@@ -874,9 +874,39 @@ body {
 /* Edge mesh minimap                                            */
 /* ============================================================ */
 
+.sd-regions-body {
+  display: grid;
+  grid-template-columns: minmax(0, 7fr) minmax(0, 3fr);
+  gap: 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.sd-regions-body-left {
+  min-width: 0;
+}
+.sd-regions-body-right {
+  border-left: 1px solid rgba(255, 255, 255, 0.06);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* Stack the map on top of the list when the hero gets narrow — otherwise
+ * the map shrinks until continents are unreadable. */
+@media (max-width: 860px) {
+  .sd-regions-body {
+    grid-template-columns: 1fr;
+  }
+  .sd-regions-body-right {
+    border-left: 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+  }
+}
+
 .sd-map {
   padding: 20px 24px 8px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.sd-regions-body-left .sd-map-caption {
+  margin: 10px 24px 14px;
 }
 
 .sd-map-inner {
