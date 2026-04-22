@@ -399,7 +399,38 @@ type NudgeTarget = {
   dotY: number;
 };
 
-function arrange(targets: NudgeTarget[]): NudgeTarget[] {
+/// Shortest distance from point (px,py) to the segment [(ax,ay)-(bx,by)],
+/// plus a normalized perpendicular direction (from nearest segment point
+/// toward the input point). Returns null when the nearest point lies at
+/// an endpoint — we handle endpoint-repulsion via the dot-vs-label pass.
+function perpRepel(
+  px: number, py: number,
+  ax: number, ay: number,
+  bx: number, by: number,
+): { dist: number; nx: number; ny: number } | null {
+  const dx = bx - ax;
+  const dy = by - ay;
+  const len2 = dx * dx + dy * dy;
+  if (len2 === 0) return null;
+  const t = ((px - ax) * dx + (py - ay) * dy) / len2;
+  if (t <= 0.05 || t >= 0.95) return null; // let endpoint handler cover it
+  const cx = ax + t * dx;
+  const cy = ay + t * dy;
+  const vx = px - cx;
+  const vy = py - cy;
+  const dist = Math.hypot(vx, vy);
+  if (dist === 0) {
+    // Label is exactly on the line — push perpendicular.
+    const ln = Math.hypot(dx, dy);
+    return { dist: 0, nx: -dy / ln, ny: dx / ln };
+  }
+  return { dist, nx: vx / dist, ny: vy / dist };
+}
+
+function arrange(targets: NudgeTarget[], clientPt: { x: number; y: number } | null): NudgeTarget[] {
+  // Pre-compute line endpoints (client → each non-client target) so we
+  // only rebuild them once per iteration set, not per label per iteration.
+  const LINE_CLEAR = 9; // viewBox units — push labels at least this far from line
   for (let k = 0; k < ITER; k++) {
     for (let i = 0; i < targets.length; i++) {
       let dy = 0;
@@ -426,9 +457,27 @@ function arrange(targets: NudgeTarget[]): NudgeTarget[] {
           dx += (DOT_PAD_X - Math.abs(ex)) * dirX * 0.25;
         }
       }
-      targets[i].y += dy * 0.35;
-      targets[i].x += dx * 0.2;
-      // Weak spring back so labels stay near their anchor.
+      // Label vs every connector line (client → each edge). The label's
+      // own anchor line goes from clientPt to (dotX, dotY) — we DON'T skip
+      // that one, since the label should sit alongside the line, not on it.
+      if (clientPt) {
+        for (let j = 0; j < targets.length; j++) {
+          if (targets[j].key === "__you") continue; // no line to self
+          const repel = perpRepel(
+            targets[i].x, targets[i].y,
+            clientPt.x, clientPt.y,
+            targets[j].dotX, targets[j].dotY,
+          );
+          if (repel && repel.dist < LINE_CLEAR) {
+            const push = (LINE_CLEAR - repel.dist);
+            dx += repel.nx * push * 0.5;
+            dy += repel.ny * push * 0.5;
+          }
+        }
+      }
+      targets[i].y += dy * 0.3;
+      targets[i].x += dx * 0.18;
+      // Weak spring back toward anchor.
       targets[i].y += (targets[i].ay - targets[i].y) * 0.04;
       targets[i].x += (targets[i].ax - targets[i].x) * 0.04;
       // Clip to the map interior.
@@ -460,7 +509,12 @@ const laidOut = computed(() => {
       dotY: clientPointRaw.value.y,
     });
   }
-  arrange(targets);
+  arrange(
+    targets,
+    clientPointRaw.value
+      ? { x: clientPointRaw.value.x, y: clientPointRaw.value.y }
+      : null,
+  );
   const byKey: Record<string, NudgeTarget> = {};
   for (const t of targets) byKey[t.key] = t;
   return byKey;
