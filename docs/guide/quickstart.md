@@ -199,18 +199,3 @@ for (const row of balances.accounts) {
 ```
 
 :::
-
-## Recommended SDK behavior
-
-SDKs should:
-
-1. accept multiple bootstrap edge URLs
-2. fetch `/gateway/edges` from any reachable bootstrap edge
-3. probe `/gateway/health` on candidates
-4. prefer ready, non-overloaded edges
-5. choose the lowest-latency candidate
-6. fail over on timeout or `5xx`
-
-That keeps the public edge contract simple without exposing the private
-mesh. The official Rust, Python, and TypeScript clients all do the
-above out of the box.
