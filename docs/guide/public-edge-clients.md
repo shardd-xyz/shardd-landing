@@ -50,14 +50,39 @@ Example response:
 }
 ```
 
-## Official example clients
+## Official clients
 
-The core repo contains working examples in:
+The same bootstrap + failover dance is built into the official SDKs, so
+typical apps call a couple of high-level methods and skip the plumbing:
 
-- Python
-- TypeScript
-- Rust
+::: code-group
 
-Each example bootstraps from multiple edges, uses `/gateway/edges` to discover
-others, probes health locally, and then performs the request over HTTPS with a
-bearer API key.
+```bash [curl]
+# no install — curl ships with every system
+```
+
+```toml [rust]
+# Cargo.toml
+[dependencies]
+shardd = "0.1"
+```
+
+```bash [python]
+pip install shardd
+```
+
+```bash [typescript]
+npm install shardd
+```
+
+:::
+
+- Rust → [crates.io/shardd](https://crates.io/crates/shardd) · [docs.rs](https://docs.rs/shardd)
+- Python → [pypi.org/project/shardd](https://pypi.org/project/shardd/)
+- TypeScript → [npmjs.com/package/shardd](https://www.npmjs.com/package/shardd)
+- Full source + runnable examples → [shardd-xyz/shardd/tree/main/sdks](https://github.com/shardd-xyz/shardd/tree/main/sdks)
+
+Each SDK accepts a list of bootstrap edges, probes
+`/gateway/health`, refreshes `/gateway/edges` on demand, and fails over
+on timeout or `5xx`. See the [Quickstart](/guide/quickstart) for the
+common calls.
