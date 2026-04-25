@@ -1042,9 +1042,9 @@ function regionLatencySparkline(edge: EdgeSummary): string {
             </a>
             <a
               class="sd-btn sd-btn-ghost"
-              href="https://github.com/shardd-xyz"
+              href="https://github.com/shardd-xyz/shardd"
             >
-              GitHub
+              Read the source
             </a>
           </div>
         </div>
