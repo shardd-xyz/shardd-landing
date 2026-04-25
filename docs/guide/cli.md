@@ -68,6 +68,6 @@ shardd auth logout --local    # delete local creds only; key stays alive
 
 ## Source
 
-[github.com/shardd-xyz/shardd/tree/main/apps/customer-cli](https://github.com/shardd-xyz/shardd/tree/main/apps/customer-cli) ·
+[github.com/shardd-xyz/shardd/tree/main/apps/developer-cli](https://github.com/shardd-xyz/shardd/tree/main/apps/developer-cli) ·
 MIT license · published as `shardd-cli` on
 [crates.io](https://crates.io/crates/shardd-cli).
