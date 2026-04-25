@@ -28,6 +28,7 @@ at [app.shardd.xyz/dashboard/keys](https://app.shardd.xyz/dashboard/keys).
 
 - [**Quickstart**](/guide/quickstart) — copy-pasteable curl, Rust, Python, TypeScript, Kotlin examples for every operation. Pick a tab; the choice sticks across pages.
 - [**SDKs**](/guide/sdks) — package coordinates for the four first-party clients (`shardd` on crates.io / PyPI, `@shardd/sdk` on npm, `xyz.shardd:sdk` on Maven Central) and what every SDK does for free (probe, rank, fail over, idempotency).
+- [**CLI**](/guide/cli) — `cargo install shardd-cli` for a terminal-based front-end with browser-based device-flow auth. Same operations as the dashboard.
 - [**AI Agent Prompt**](/guide/ai-agent-setup) — drop-in prompt for Claude Code / Cursor / Codex that wires shardd into whatever language and tooling your project already uses.
 - [**Public Edge Clients**](/guide/public-edge-clients) — when you're not on a supported language and need to talk HTTPS directly.
 - [**Architecture**](/guide/architecture) — how the private mesh and public edge planes are split.

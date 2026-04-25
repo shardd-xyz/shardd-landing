@@ -11,6 +11,7 @@ typical app calls a couple of high-level methods and skips the
 | Python | `shardd` | [pypi.org](https://pypi.org/project/shardd/) | [sdks/python](https://github.com/shardd-xyz/shardd/tree/main/sdks/python) |
 | TypeScript | `@shardd/sdk` | [npmjs.com](https://www.npmjs.com/package/@shardd/sdk) | [sdks/typescript](https://github.com/shardd-xyz/shardd/tree/main/sdks/typescript) |
 | Kotlin / JVM | `xyz.shardd:sdk` | [Maven Central](https://central.sonatype.com/artifact/xyz.shardd/sdk) | [sdks/kotlin](https://github.com/shardd-xyz/shardd/tree/main/sdks/kotlin) |
+| CLI | `shardd-cli` (binary `shardd`) | [crates.io](https://crates.io/crates/shardd-cli) | [apps/customer-cli](https://github.com/shardd-xyz/shardd/tree/main/apps/customer-cli) |
 
 ## Install
 
@@ -36,6 +37,12 @@ npm install @shardd/sdk
 dependencies {
     implementation("xyz.shardd:sdk:0.1.0")
 }
+```
+
+```bash [cli]
+cargo install shardd-cli
+# then:
+shardd auth login
 ```
 
 :::
