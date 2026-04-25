@@ -72,14 +72,22 @@ pip install shardd
 ```
 
 ```bash [typescript]
-npm install shardd
+npm install @shardd/sdk
+```
+
+```kotlin [kotlin]
+// build.gradle.kts
+dependencies {
+    implementation("xyz.shardd:sdk:0.1.0")
+}
 ```
 
 :::
 
 - Rust → [crates.io/shardd](https://crates.io/crates/shardd) · [docs.rs](https://docs.rs/shardd)
 - Python → [pypi.org/project/shardd](https://pypi.org/project/shardd/)
-- TypeScript → [npmjs.com/package/shardd](https://www.npmjs.com/package/shardd)
+- TypeScript → [npmjs.com/package/@shardd/sdk](https://www.npmjs.com/package/@shardd/sdk)
+- Kotlin / JVM → [central.sonatype.com/artifact/xyz.shardd/sdk](https://central.sonatype.com/artifact/xyz.shardd/sdk)
 - Full source + runnable examples → [shardd-xyz/shardd/tree/main/sdks](https://github.com/shardd-xyz/shardd/tree/main/sdks)
 
 Each SDK accepts a list of bootstrap edges, probes

@@ -58,6 +58,7 @@ export default defineConfig({
         text: "Get Started",
         items: [
           { text: "Quickstart", link: "/guide/quickstart" },
+          { text: "SDKs", link: "/guide/sdks" },
           { text: "Public Edge Clients", link: "/guide/public-edge-clients" },
         ],
       },

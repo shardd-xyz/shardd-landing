@@ -10,7 +10,7 @@ Start with one or more bootstrap edge URLs:
 
 Get an API key at [app.shardd.xyz → Keys](https://app.shardd.xyz/dashboard/keys)
 and export it as `SHARDD_API_KEY`. The tabs below show the same
-operations in four forms — pick the one that fits your stack; the
+operations in five forms — pick the one that fits your stack; the
 choice sticks across pages.
 
 ## Install the SDK
@@ -33,7 +33,14 @@ pip install shardd
 ```
 
 ```bash [typescript]
-npm install shardd
+npm install @shardd/sdk
+```
+
+```kotlin [kotlin]
+// build.gradle.kts
+dependencies {
+    implementation("xyz.shardd:sdk:0.1.0")
+}
 ```
 
 :::
@@ -67,10 +74,17 @@ print(shardd.health())
 ```
 
 ```typescript [typescript]
-import { Client } from "shardd";
+import { Client } from "@shardd/sdk";
 
 const shardd = new Client(process.env.SHARDD_API_KEY!);
 console.log(await shardd.health());
+```
+
+```kotlin [kotlin]
+import xyz.shardd.sdk.Client
+
+val shardd = Client(System.getenv("SHARDD_API_KEY"))
+println(shardd.health())
 ```
 
 :::
@@ -108,6 +122,16 @@ print("balance =", result.balance)
 ```typescript [typescript]
 const result = await shardd.createEvent("orders", "alice", 100, { note: "top-up" });
 console.log("balance =", result.balance);
+```
+
+```kotlin [kotlin]
+import xyz.shardd.sdk.CreateEventOptions
+
+val result = shardd.createEvent(
+    "orders", "alice", 100,
+    CreateEventOptions(note = "top-up"),
+)
+println("balance = ${result.balance}")
 ```
 
 :::
@@ -167,6 +191,17 @@ const result = await shardd.createEvent("orders", "alice", -25, {
 console.log("balance =", result.balance);
 ```
 
+```kotlin [kotlin]
+val result = shardd.createEvent(
+    "orders", "alice", -25,
+    CreateEventOptions(
+        note = "order-9821",
+        idempotencyNonce = "order-9821-charge",
+    ),
+)
+println("balance = ${result.balance}")
+```
+
 :::
 
 ## Read balances
@@ -195,6 +230,13 @@ for row in balances.accounts:
 const balances = await shardd.getBalances("orders");
 for (const row of balances.accounts) {
   console.log(`${row.account} = ${row.balance}`);
+}
+```
+
+```kotlin [kotlin]
+val balances = shardd.getBalances("orders")
+for (row in balances.accounts) {
+    println("${row.account} = ${row.balance}")
 }
 ```
 

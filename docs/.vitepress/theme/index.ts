@@ -6,9 +6,10 @@ import "./custom.css";
 // Persist the selected tab across every ::: code-group on the site.
 // VitePress already syncs labels across groups on a single page; this
 // adds cross-page + cross-reload stickiness via localStorage, keyed on
-// the lowercased tab label (`curl`, `rust`, `python`, `typescript`).
+// the lowercased tab label (`curl`, `rust`, `python`, `typescript`,
+// `kotlin`).
 const STORAGE_KEY = "shardd.code.lang";
-const CANONICAL = new Set(["curl", "rust", "python", "typescript"]);
+const CANONICAL = new Set(["curl", "rust", "python", "typescript", "kotlin"]);
 
 function normalize(label: string): string {
   return label.trim().toLowerCase();
