@@ -59,6 +59,7 @@ export default defineConfig({
         items: [
           { text: "Quickstart", link: "/guide/quickstart" },
           { text: "SDKs", link: "/guide/sdks" },
+          { text: "AI Agent Prompt", link: "/guide/ai-agent-setup" },
           { text: "Public Edge Clients", link: "/guide/public-edge-clients" },
         ],
       },
