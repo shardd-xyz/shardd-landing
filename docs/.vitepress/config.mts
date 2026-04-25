@@ -46,7 +46,7 @@ export default defineConfig({
   themeConfig: {
     logo: "/logo-mark.svg",
     nav: [
-      { text: "Docs", link: "/guide/quickstart" },
+      { text: "Docs", link: "/guide/introduction" },
       { text: "GitHub", link: "https://github.com/shardd-xyz" },
       { text: "Login", link: "https://app.shardd.xyz" },
     ],
@@ -59,6 +59,7 @@ export default defineConfig({
       {
         text: "Get Started",
         items: [
+          { text: "Introduction", link: "/guide/introduction" },
           { text: "Quickstart", link: "/guide/quickstart" },
           { text: "SDKs", link: "/guide/sdks" },
           { text: "AI Agent Prompt", link: "/guide/ai-agent-setup" },
@@ -71,6 +72,7 @@ export default defineConfig({
   // Used by buildEnd below for llms.txt / llms-full.txt.
   async buildEnd(siteConfig) {
     const order = [
+      "introduction",
       "quickstart",
       "sdks",
       "ai-agent-setup",

@@ -32,54 +32,66 @@ async function copyMarkdown() {
 </script>
 
 <template>
-  <div v-if="showActions" class="sd-doc-actions">
+  <!-- Anchor is zero-height so it doesn't push the article title down;
+       the absolutely-positioned button floats at the top-right of the
+       article column. -->
+  <div v-if="showActions" class="sd-page-copy-anchor">
     <button
       type="button"
-      class="sd-doc-action"
-      :data-state="copied ? 'copied' : (failed ? 'failed' : 'idle')"
+      class="sd-page-copy-btn"
+      :data-state="copied ? 'copied' : failed ? 'failed' : 'idle'"
+      :aria-label="copied ? 'Copied' : 'Copy page as Markdown'"
+      :title="copied ? 'Copied' : failed ? 'Copy failed' : 'Copy page as Markdown'"
       @click="copyMarkdown"
     >
-      <span v-if="copied">✓ copied</span>
-      <span v-else-if="failed">copy failed</span>
-      <span v-else>copy as markdown</span>
+      <svg v-if="!copied && !failed" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+      </svg>
+      <svg v-else-if="copied" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="20 6 9 17 4 12" />
+      </svg>
+      <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="18" y1="6" x2="6" y2="18" />
+        <line x1="6" y1="6" x2="18" y2="18" />
+      </svg>
     </button>
-    <a class="sd-doc-action" :href="mdUrl" target="_blank" rel="noopener">view .md</a>
-    <a class="sd-doc-action" href="/llms.txt" target="_blank" rel="noopener">llms.txt</a>
-    <a class="sd-doc-action" href="/llms-full.txt" target="_blank" rel="noopener">llms-full.txt</a>
   </div>
 </template>
 
 <style scoped>
-.sd-doc-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin: 0 0 24px;
-  font-family: var(--vp-font-family-mono, ui-monospace, monospace);
-  font-size: 12px;
-  line-height: 1;
+.sd-page-copy-anchor {
+  position: relative;
+  height: 0;
+  margin: 0;
 }
-.sd-doc-action {
+.sd-page-copy-btn {
+  position: absolute;
+  right: 0;
+  top: 4px;
+  width: 30px;
+  height: 30px;
   display: inline-flex;
   align-items: center;
-  padding: 5px 10px;
+  justify-content: center;
   border: 1px solid var(--vp-c-divider);
-  border-radius: 4px;
+  border-radius: 6px;
   color: var(--vp-c-text-2);
-  text-decoration: none;
-  background: transparent;
+  background: var(--vp-c-bg);
   cursor: pointer;
-  transition: color .15s, border-color .15s, background .15s;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+  z-index: 5;
 }
-.sd-doc-action:hover {
+.sd-page-copy-btn:hover {
   color: var(--vp-c-text-1);
   border-color: var(--vp-c-brand-1);
+  background: var(--vp-c-bg-soft);
 }
-.sd-doc-action[data-state="copied"] {
+.sd-page-copy-btn[data-state="copied"] {
   color: var(--vp-c-brand-1);
   border-color: var(--vp-c-brand-1);
 }
-.sd-doc-action[data-state="failed"] {
+.sd-page-copy-btn[data-state="failed"] {
   color: #d36363;
   border-color: #d36363;
 }
