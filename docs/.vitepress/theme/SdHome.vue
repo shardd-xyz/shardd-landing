@@ -797,6 +797,249 @@ const mapLines = computed<MapLine[]>(() => {
   });
 });
 
+// === "How it flows" — live simulation ===
+//
+// A continuous sim of the actual rules:
+//   1. EUC1 client deposits $1000 to seed the account.
+//   2. NYC and Tokyo clients fire `charge` calls at random
+//      intervals; each charge routes to the local edge → a node.
+//   3. The receiving node holds 5× the charge for 60s under its
+//      OWN id (USE1.node-1, APE1.node-2). The hold is gossiped
+//      to every peer.
+//   4. Subsequent charges to the same node consume from the
+//      existing hold (no new event needed).
+//   5. When the hold's remaining balance runs low OR its TTL
+//      drops under 5s, the node automatically rolls into a fresh
+//      hold (renewal event).
+//   6. When a hold's TTL hits 0, it expires; whatever balance
+//      hadn't been consumed returns to the available pool.
+//
+// All visuals (events log, holders list, balance) come from the
+// reactive state below. Timers run only while the section is in
+// view (IntersectionObserver gate) so off-screen tabs are quiet.
+
+const howflowEl = ref<HTMLElement | null>(null);
+const howflowVisible = ref(false);
+let howflowObserver: IntersectionObserver | null = null;
+
+type SimHold = {
+  id: number;
+  holder: string;     // e.g. "USE1.node-1"
+  rowKey: "a" | "b";  // which row this hold belongs to
+  amount: number;     // total reserved
+  remaining: number;  // unspent portion
+  ttl: number;        // seconds remaining
+  origin: string;     // originating client id
+};
+
+type SimEvent = {
+  id: number;
+  kind: "deposit" | "hold" | "renew" | "consume" | "expire";
+  text: string;
+  meta: string;
+  age: number;        // seconds since fired (for fade-out)
+};
+
+const simCommitted = ref(0);                        // total deposits − settled spend
+const simHolds = ref<SimHold[]>([]);
+const simEvents = ref<SimEvent[]>([]);
+const simStarted = ref(false);
+
+const simHeld = computed(() =>
+  simHolds.value.reduce((sum, h) => sum + h.amount, 0),
+);
+const simAvailable = computed(() =>
+  Math.max(0, simCommitted.value - simHeld.value),
+);
+
+let simTickHandle = 0;
+let simNextChargeAt = 0;
+let simSeq = 4126;
+let simEventIdCounter = 0;
+let simHoldIdCounter = 0;
+let simLastTickMs = 0;
+
+function pushSimEvent(e: Omit<SimEvent, "id" | "age">): void {
+  simSeq += 1;
+  simEvents.value = [
+    { id: ++simEventIdCounter, age: 0, ...e },
+    ...simEvents.value,
+  ].slice(0, 6);
+}
+
+// Pick a charge amount within a sensible micro-billing range
+// (think LLM tokens / API credits): a few tenths of a cent up to
+// a dime per call. With a $20 deposit that's hundreds of charges
+// before depletion, so the sim runs for a long time without
+// running dry.
+function randCharge(): number {
+  const buckets = [0.005, 0.01, 0.025, 0.05, 0.1];
+  return buckets[Math.floor(Math.random() * buckets.length)];
+}
+
+// "Charge from a region": consume from the node's existing hold
+// when there's room, otherwise create or renew a hold (5× the
+// charge). Settles consumed portion of the prior hold on renewal.
+function chargeOnRow(rowKey: "a" | "b"): void {
+  const node = rowKey === "a" ? "USE1.node-1" : "APE1.node-2";
+  const client = rowKey === "a" ? "client-nyc" : "client-tokyo";
+  const charge = randCharge();
+  const existing = simHolds.value.find((h) => h.holder === node);
+
+  // Consume from existing hold when remaining + ttl are healthy.
+  if (existing && existing.remaining >= charge && existing.ttl >= 5) {
+    simHolds.value = simHolds.value.map((h) =>
+      h.id === existing.id ? { ...h, remaining: h.remaining - charge } : h,
+    );
+    pushSimEvent({
+      kind: "consume",
+      text: `consume $${charge} · ${node}`,
+      meta: `from ${client} · remaining $${(existing.remaining - charge).toFixed(0)} · seq ${simSeq + 1}`,
+    });
+    return;
+  }
+
+  // Need to create a new hold (or renew). On renewal, settle the
+  // consumed portion of the prior hold against committed balance.
+  let renewing = false;
+  if (existing) {
+    renewing = true;
+    const settled = existing.amount - existing.remaining;
+    simCommitted.value -= settled;
+    simHolds.value = simHolds.value.filter((h) => h.id !== existing.id);
+  }
+  const holdAmt = charge * 5;
+  if (simAvailable.value < holdAmt) {
+    return; // skip this tick if we can't afford the new hold
+  }
+  const newHold: SimHold = {
+    id: ++simHoldIdCounter,
+    holder: node,
+    rowKey,
+    amount: holdAmt,
+    remaining: holdAmt - charge,
+    ttl: 60,
+    origin: client,
+  };
+  simHolds.value = [...simHolds.value, newHold];
+  pushSimEvent({
+    kind: renewing ? "renew" : "hold",
+    text: `${renewing ? "renew" : "hold"} $${holdAmt} · ttl 60s · ${node}`,
+    meta: `from ${client} · charge $${charge} · seq ${simSeq + 1}`,
+  });
+}
+
+function simTick(): void {
+  const now = Date.now();
+  const dt = simLastTickMs ? (now - simLastTickMs) / 1000 : 0;
+  simLastTickMs = now;
+
+  // Decrement TTLs and age out expired holds.
+  let nextHolds: SimHold[] = [];
+  for (const h of simHolds.value) {
+    const ttl = Math.max(0, h.ttl - dt);
+    if (ttl <= 0) {
+      // Expired — settle consumed portion against committed
+      // balance; the remaining (unspent) returns to available
+      // implicitly when this hold leaves the list.
+      const settled = h.amount - h.remaining;
+      simCommitted.value -= settled;
+      pushSimEvent({
+        kind: "expire",
+        text: `expire $${h.remaining.toFixed(0)} returned · ${h.holder}`,
+        meta: `settled $${settled.toFixed(0)} spend · seq ${simSeq + 1}`,
+      });
+      continue;
+    }
+    nextHolds.push({ ...h, ttl });
+  }
+  simHolds.value = nextHolds;
+
+  // Age events for fade-out on the older entries.
+  simEvents.value = simEvents.value.map((e) => ({ ...e, age: e.age + dt }));
+
+  // Fire next charge on its random schedule.
+  if (now >= simNextChargeAt) {
+    simNextChargeAt = now + 2200 + Math.random() * 2300;
+    chargeOnRow(Math.random() < 0.5 ? "a" : "b");
+  }
+
+  simTickHandle = window.setTimeout(simTick, 200);
+}
+
+function startSim(): void {
+  if (simStarted.value) return;
+  simStarted.value = true;
+  simCommitted.value = 0;
+  simHolds.value = [];
+  simEvents.value = [];
+  simSeq = 4126;
+  simEventIdCounter = 0;
+  simHoldIdCounter = 0;
+  simLastTickMs = 0;
+
+  // Initial deposit from EUC1 (Paris client) seeds the account.
+  window.setTimeout(() => {
+    if (!simStarted.value) return;
+    simCommitted.value = 20;
+    pushSimEvent({
+      kind: "deposit",
+      text: `deposit +$20.00 · EUC1.node-2`,
+      meta: `from client-paris · seq ${simSeq + 1}`,
+    });
+    simNextChargeAt = Date.now() + 1500;
+  }, 800);
+
+  simTickHandle = window.setTimeout(simTick, 200);
+}
+
+function stopSim(): void {
+  if (simTickHandle) {
+    window.clearTimeout(simTickHandle);
+    simTickHandle = 0;
+  }
+  simStarted.value = false;
+}
+
+// Per-row hold lookup so the template can show "+ hold $X · 53s"
+// directly under each region's nodes when one is active.
+const simHoldByRow = computed<Record<"a" | "b", SimHold | undefined>>(() => ({
+  a: simHolds.value.find((h) => h.rowKey === "a"),
+  b: simHolds.value.find((h) => h.rowKey === "b"),
+}));
+
+function fmtTtl(ttl: number): string {
+  return ttl >= 10 ? `${Math.round(ttl)}s` : `${ttl.toFixed(1)}s`;
+}
+// Magnitude-aware money formatter. Whole-dollar amounts (the
+// committed balance, deposits) get the usual 2 decimals; sub-
+// dollar micro-charges get 4 so $0.005 reads as $0.0050 instead
+// of getting rounded to $0.01.
+function fmtMoney(n: number): string {
+  if (Math.abs(n) >= 1) return `$${n.toFixed(2)}`;
+  return `$${n.toFixed(4)}`;
+}
+
+onMounted(() => {
+  if (typeof IntersectionObserver !== "undefined" && howflowEl.value) {
+    howflowObserver = new IntersectionObserver(
+      (entries) => {
+        const inView = entries[0]?.isIntersecting ?? false;
+        howflowVisible.value = inView;
+        if (inView) startSim();
+        else stopSim();
+      },
+      { threshold: 0.2 },
+    );
+    howflowObserver.observe(howflowEl.value);
+  }
+});
+
+onBeforeUnmount(() => {
+  stopSim();
+  howflowObserver?.disconnect();
+});
+
 function regionLatencySparkline(edge: EdgeSummary): string {
   const samples = latencyHistory.value[edge.edge_id] || [];
   if (samples.length === 0) return "";
@@ -1019,6 +1262,233 @@ function regionLatencySparkline(edge: EdgeSummary): string {
             <p class="sd-card-body">{{ f.body }}</p>
           </article>
         </div>
+      </div>
+    </section>
+
+    <!-- HOW IT FLOWS --------------------------------------------- -->
+    <!-- Left-to-right grid with four explicit columns: CLIENTS,    -->
+    <!-- EDGES, NODES, GOSSIP EVENTS. Two clients (NYC, Tokyo) fire -->
+    <!-- `charge` calls concurrently; their nearest edges route to  -->
+    <!-- a node, the node creates a `hold` event reserving balance, -->
+    <!-- gossip replicates the event everywhere. Bottom ledger      -->
+    <!-- itemizes the holds per holder.                             -->
+    <section
+      class="sd-howflow"
+      ref="howflowEl"
+      :class="{ 'sd-howflow-playing': howflowVisible }"
+    >
+      <div class="sd-section-inner">
+        <div class="sd-section-head">
+          <span class="sd-section-label">// how it flows</span>
+          <h2 class="sd-section-title">
+            Charge from any region. Reservations replicate.
+          </h2>
+        </div>
+
+        <div class="sd-howflow-stage" aria-hidden="true">
+          <!-- Column header strip -->
+          <div class="sd-howflow-headers">
+            <div class="sd-howflow-col-head">// clients</div>
+            <div class="sd-howflow-col-head">// edges</div>
+            <div class="sd-howflow-col-head">// nodes</div>
+            <div class="sd-howflow-col-head">// gossip events</div>
+          </div>
+
+          <!-- 4-column grid with three flow rows. -->
+          <div class="sd-howflow-grid">
+
+            <!-- ROW 1 — Flow A: NYC client → USE1 edge → USE1 node -->
+            <div class="sd-howflow-cell sd-howflow-client sd-howflow-row-a">
+              <div class="sd-howflow-client-head">
+                <span class="sd-howflow-pulse"></span>
+                <span class="sd-howflow-client-id">client · nyc</span>
+              </div>
+              <code class="sd-howflow-client-call">client.charge($0.005–0.10)</code>
+              <div class="sd-howflow-client-ack">↳ 200 OK · 4ms</div>
+            </div>
+            <div class="sd-howflow-cell sd-howflow-edge sd-howflow-row-a">
+              <div class="sd-howflow-edge-code">USE1</div>
+              <div class="sd-howflow-edge-city">virginia</div>
+            </div>
+            <div class="sd-howflow-cell sd-howflow-nodes sd-howflow-row-a">
+              <div class="sd-howflow-nodes-tag">USE1.nodes</div>
+              <div class="sd-howflow-nodes-row">
+                <span class="sd-howflow-node sd-howflow-node-chosen-a"></span>
+                <span class="sd-howflow-node sd-howflow-node-peer-a" style="--n: 1"></span>
+                <span class="sd-howflow-node sd-howflow-node-peer-a" style="--n: 2"></span>
+              </div>
+              <div
+                class="sd-howflow-nodes-emit sd-howflow-nodes-emit-live"
+                v-if="simHoldByRow.a"
+              >
+                + hold {{ fmtMoney(simHoldByRow.a.amount) }}
+                · ttl {{ fmtTtl(simHoldByRow.a.ttl) }}
+                · left {{ fmtMoney(simHoldByRow.a.remaining) }}
+              </div>
+            </div>
+
+            <!-- ROW 2 — EUC1: deposit from Paris, then receives gossip -->
+            <div class="sd-howflow-cell sd-howflow-client sd-howflow-row-eu">
+              <div class="sd-howflow-client-head">
+                <span class="sd-howflow-pulse"></span>
+                <span class="sd-howflow-client-id">client · paris</span>
+              </div>
+              <code class="sd-howflow-client-call">client.deposit($20.00)</code>
+              <div class="sd-howflow-client-ack">↳ 200 OK · seeded</div>
+            </div>
+            <div class="sd-howflow-cell sd-howflow-edge">
+              <div class="sd-howflow-edge-code">EUC1</div>
+              <div class="sd-howflow-edge-city">frankfurt</div>
+            </div>
+            <div class="sd-howflow-cell sd-howflow-nodes">
+              <div class="sd-howflow-nodes-tag">EUC1.nodes</div>
+              <div class="sd-howflow-nodes-row">
+                <span class="sd-howflow-node sd-howflow-node-gossip" style="--n: 0"></span>
+                <span class="sd-howflow-node sd-howflow-node-eu-chosen" style="--n: 1"></span>
+                <span class="sd-howflow-node sd-howflow-node-gossip" style="--n: 2"></span>
+              </div>
+              <div class="sd-howflow-nodes-recv">
+                ↳ converged · all peers know every hold
+              </div>
+            </div>
+
+            <!-- ROW 3 — Flow B: Tokyo client → APE1 edge → APE1 node -->
+            <div class="sd-howflow-cell sd-howflow-client sd-howflow-row-b">
+              <div class="sd-howflow-client-head">
+                <span class="sd-howflow-pulse"></span>
+                <span class="sd-howflow-client-id">client · tokyo</span>
+              </div>
+              <code class="sd-howflow-client-call">client.charge($0.005–0.10)</code>
+              <div class="sd-howflow-client-ack">↳ 200 OK · 6ms</div>
+            </div>
+            <div class="sd-howflow-cell sd-howflow-edge sd-howflow-row-b">
+              <div class="sd-howflow-edge-code">APE1</div>
+              <div class="sd-howflow-edge-city">hong kong</div>
+            </div>
+            <div class="sd-howflow-cell sd-howflow-nodes sd-howflow-row-b">
+              <div class="sd-howflow-nodes-tag">APE1.nodes</div>
+              <div class="sd-howflow-nodes-row">
+                <span class="sd-howflow-node sd-howflow-node-peer-b" style="--n: 0"></span>
+                <span class="sd-howflow-node sd-howflow-node-chosen-b"></span>
+                <span class="sd-howflow-node sd-howflow-node-peer-b" style="--n: 2"></span>
+              </div>
+              <div
+                class="sd-howflow-nodes-emit sd-howflow-nodes-emit-live"
+                v-if="simHoldByRow.b"
+              >
+                + hold {{ fmtMoney(simHoldByRow.b.amount) }}
+                · ttl {{ fmtTtl(simHoldByRow.b.ttl) }}
+                · left {{ fmtMoney(simHoldByRow.b.remaining) }}
+              </div>
+            </div>
+
+            <!-- Gossip events panel — populated live from the sim. -->
+            <div class="sd-howflow-events">
+              <div class="sd-howflow-events-header">
+                shardd/events/v1
+              </div>
+              <TransitionGroup name="sd-howflow-event" tag="ul" class="sd-howflow-events-list">
+                <li
+                  v-for="ev in simEvents"
+                  :key="ev.id"
+                  class="sd-howflow-event"
+                  :class="`sd-howflow-event-${ev.kind}`"
+                >
+                  <span class="sd-howflow-event-prefix">{{
+                    ev.kind === "renew" ? "↻"
+                    : ev.kind === "expire" ? "✕"
+                    : ev.kind === "consume" ? "−"
+                    : ev.kind === "deposit" ? "+"
+                    : "▸"
+                  }}</span>
+                  <div class="sd-howflow-event-body">
+                    <div class="sd-howflow-event-payload">{{ ev.text }}</div>
+                    <div class="sd-howflow-event-source">{{ ev.meta }}</div>
+                  </div>
+                </li>
+                <li
+                  v-if="simEvents.length === 0"
+                  key="empty"
+                  class="sd-howflow-event sd-howflow-event-idle"
+                >
+                  <span class="sd-howflow-event-prefix">·</span>
+                  <div class="sd-howflow-event-body">
+                    <div class="sd-howflow-event-payload">awaiting events…</div>
+                    <div class="sd-howflow-event-source">{{ simStarted ? "deposit incoming" : "section out of view" }}</div>
+                  </div>
+                </li>
+              </TransitionGroup>
+              <div class="sd-howflow-events-foot">
+                ↳ every node converges · ttl 60s · auto-rolls when low
+              </div>
+            </div>
+          </div>
+
+          <!-- Animated request packets travel left → right along
+               their row, from client cell to node cell. -->
+          <div class="sd-howflow-packet sd-howflow-packet-a">
+            client.charge($30)
+          </div>
+          <div class="sd-howflow-packet sd-howflow-packet-b">
+            client.charge($20)
+          </div>
+        </div>
+
+        <!-- Live ledger — driven entirely from the sim state. -->
+        <div class="sd-howflow-ledger">
+          <div class="sd-howflow-ledger-cell">
+            <div class="sd-howflow-ledger-label">committed balance</div>
+            <div class="sd-howflow-ledger-val">{{ fmtMoney(simCommitted) }}</div>
+          </div>
+          <div class="sd-howflow-ledger-divider"></div>
+          <div class="sd-howflow-ledger-cell sd-howflow-ledger-holds">
+            <div class="sd-howflow-ledger-label">
+              active holds
+              <span class="sd-howflow-ledger-sublabel">
+                · {{ simHolds.length }}
+              </span>
+            </div>
+            <TransitionGroup name="sd-howflow-holder" tag="ul" class="sd-howflow-holders">
+              <li
+                v-for="h in simHolds"
+                :key="h.id"
+                class="sd-howflow-holder"
+                :class="`sd-howflow-holder-${h.rowKey}`"
+              >
+                <span class="sd-howflow-holder-id">{{ h.holder }}</span>
+                <span class="sd-howflow-holder-meta">
+                  <span class="sd-howflow-holder-amt">−{{ fmtMoney(h.remaining) }}</span>
+                  <span class="sd-howflow-holder-of">/ {{ fmtMoney(h.amount) }}</span>
+                  <span class="sd-howflow-holder-ttl" :class="{ 'sd-howflow-holder-ttl-low': h.ttl < 8 }">
+                    {{ fmtTtl(h.ttl) }}
+                  </span>
+                </span>
+              </li>
+              <li
+                v-if="simHolds.length === 0"
+                key="none"
+                class="sd-howflow-holder sd-howflow-holder-empty"
+              >
+                <span class="sd-howflow-holder-id">no active holds</span>
+              </li>
+            </TransitionGroup>
+          </div>
+          <div class="sd-howflow-ledger-divider"></div>
+          <div class="sd-howflow-ledger-cell">
+            <div class="sd-howflow-ledger-label">available</div>
+            <div class="sd-howflow-ledger-val">{{ fmtMoney(simAvailable) }}</div>
+          </div>
+        </div>
+
+        <p class="sd-howflow-caption">
+          Two clients fire <code>charge</code> calls concurrently to
+          their nearest edge. The receiving node holds 5× the charge
+          for 60s under its own id and gossips the
+          <code>hold</code> event so every peer converges on the
+          same reservation. When a hold's remaining balance and TTL
+          both run low, the holding node automatically rolls into a
+          fresh hold — no client retry, no coordination.
+        </p>
       </div>
     </section>
 

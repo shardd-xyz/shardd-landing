@@ -22,6 +22,22 @@ export default defineConfig({
   base: "/",
   cleanUrls: true,
   appearance: "force-dark",
+  vite: {
+    server: {
+      // Allow tailnet hostnames so the dev server can be previewed
+      // from any machine on the tailnet (e.g. http://contabo-dev-sg:5173).
+      // `.ts.net` covers MagicDNS variants; bare hostnames are added
+      // explicitly. Only used by `vitepress dev`, not by the prod build.
+      allowedHosts: [
+        "contabo-dev-sg",
+        "cherry",
+        "meux",
+        "reauth",
+        "refoldbot",
+        ".ts.net",
+      ],
+    },
+  },
   head: [
     ["link", { rel: "preconnect", href: "https://fonts.googleapis.com" }],
     ["link", { rel: "preconnect", href: "https://fonts.gstatic.com", crossorigin: "" }],
