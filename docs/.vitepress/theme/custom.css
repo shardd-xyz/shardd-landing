@@ -1641,15 +1641,56 @@ body {
   }
 }
 
+/* Below ~600px, packing client/edge/nodes side-by-side fights for
+   space and the long `client.charge($0.005–0.10)` call wraps weirdly.
+   Stack the 9 cells (3 rows × 3 cols) into a single column instead;
+   document order already runs row-by-row (client → edge → nodes),
+   so the resulting list reads top-to-bottom as a flow. */
 @media (max-width: 600px) {
+  .sd-howflow {
+    padding: 64px 12px 60px;
+  }
+  .sd-howflow-stage {
+    padding: 12px;
+  }
+  .sd-howflow-headers {
+    display: none;
+  }
   .sd-howflow-grid {
-    grid-template-columns: 1fr 0.9fr 1fr;
-    grid-template-rows: repeat(3, 100px) auto;
+    grid-template-columns: 1fr;
+    grid-template-rows: none;
+    row-gap: 8px;
+    column-gap: 0;
+    padding: 8px;
+  }
+  .sd-howflow-cell {
+    min-height: 0;
+  }
+  .sd-howflow-client,
+  .sd-howflow-edge,
+  .sd-howflow-nodes {
+    padding: 10px 12px;
+  }
+  .sd-howflow-edge {
+    flex-direction: row;
+    align-items: baseline;
+    gap: 10px;
+  }
+  .sd-howflow-edge-city {
+    margin-top: 0;
+  }
+  .sd-howflow-nodes-row {
+    margin: 4px 0;
+  }
+  .sd-howflow-events {
+    grid-column: 1;
+    grid-row: auto;
+    margin-top: 6px;
   }
   .sd-howflow-client-call,
   .sd-howflow-edge-city,
   .sd-howflow-nodes-tag {
-    font-size: 9.5px;
+    font-size: 10.5px;
   }
   .sd-howflow-ledger {
     flex-direction: column;
