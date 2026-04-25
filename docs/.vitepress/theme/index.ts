@@ -1,6 +1,8 @@
 import DefaultTheme from "vitepress/theme";
 import type { Router } from "vitepress";
+import { h } from "vue";
 import SdHome from "./SdHome.vue";
+import DocActions from "./DocActions.vue";
 import "./custom.css";
 
 // Persist the selected tab across every ::: code-group on the site.
@@ -75,6 +77,13 @@ function wireClicks(): void {
 
 export default {
   extends: DefaultTheme,
+  Layout() {
+    // Inject the per-page copy / .md / llms.txt control above the
+    // article body. The component itself only renders on /guide/*.
+    return h(DefaultTheme.Layout, null, {
+      "doc-before": () => h(DocActions),
+    });
+  },
   enhanceApp({
     app,
     router,

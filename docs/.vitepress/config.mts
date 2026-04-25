@@ -1,5 +1,7 @@
 import { defineConfig } from "vitepress";
 import { execSync } from "node:child_process";
+import { readFile, writeFile, copyFile, readdir, mkdir } from "node:fs/promises";
+import { join } from "node:path";
 
 // Resolve the commit hash at build time so the footer can link to the
 // exact deployed version. Prefer GITHUB_SHA (set by the Pages workflow);
@@ -50,7 +52,7 @@ export default defineConfig({
     ],
     socialLinks: [{ icon: "github", link: "https://github.com/shardd-xyz" }],
     footer: {
-      message: `<a href="https://app.shardd.xyz/tos" style="color:inherit">Terms</a> · <a href="https://app.shardd.xyz/privacy" style="color:inherit">Privacy</a> · <a href="mailto:contact@tqdm.org" style="color:inherit">Contact</a> · <a href="https://esnx.xyz" target="_blank" rel="noopener" style="color:inherit">Me</a> · <a href="https://github.com/shardd-xyz/shardd-landing/commit/${commitSha}" target="_blank" rel="noopener" style="color:inherit;opacity:0.7" title="${commitSha}">build ${commitShort}</a>`,
+      message: `<a href="https://app.shardd.xyz/tos" style="color:inherit">Terms</a> · <a href="https://app.shardd.xyz/privacy" style="color:inherit">Privacy</a> · <a href="mailto:contact@tqdm.org" style="color:inherit">Contact</a> · <a href="https://esnx.xyz" target="_blank" rel="noopener" style="color:inherit">Me</a> · <a href="/llms.txt" style="color:inherit" title="docs index for LLMs">llms.txt</a> · <a href="https://github.com/shardd-xyz/shardd-landing/commit/${commitSha}" target="_blank" rel="noopener" style="color:inherit;opacity:0.7" title="${commitSha}">build ${commitShort}</a>`,
       copyright: "© 2026 TQDM Inc.",
     },
     sidebar: [
@@ -64,5 +66,78 @@ export default defineConfig({
         ],
       },
     ],
+  },
+  // Sidebar order; files not listed here go to the end alphabetically.
+  // Used by buildEnd below for llms.txt / llms-full.txt.
+  async buildEnd(siteConfig) {
+    const order = [
+      "quickstart",
+      "sdks",
+      "ai-agent-setup",
+      "public-edge-clients",
+      "architecture",
+    ];
+    const guideSrc = join(siteConfig.srcDir, "guide");
+    const guideOut = join(siteConfig.outDir, "guide");
+    await mkdir(guideOut, { recursive: true });
+
+    const files = (await readdir(guideSrc))
+      .filter((f) => f.endsWith(".md"))
+      .sort((a, b) => {
+        const ai = order.indexOf(a.replace(/\.md$/, ""));
+        const bi = order.indexOf(b.replace(/\.md$/, ""));
+        return (
+          (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi) || a.localeCompare(b)
+        );
+      });
+
+    // 1) Mirror each guide *.md alongside its built HTML so
+    //    https://shardd.xyz/guide/<slug>.md returns the raw source.
+    for (const f of files) {
+      await copyFile(join(guideSrc, f), join(guideOut, f));
+    }
+
+    // 2) Emit llms.txt (index, llmstxt.org-style) and llms-full.txt
+    //    (full concatenated docs) at the site root.
+    const indexLines: string[] = [
+      "# shardd",
+      "",
+      "> A globally distributed credit ledger for metered billing. Credit, debit, and hold accounts from any region — no central database. First-party SDKs for Rust, Python, TypeScript, and Kotlin/JVM.",
+      "",
+      "## Docs",
+      "",
+    ];
+    const fullParts: string[] = [
+      "# shardd — full documentation",
+      "",
+      "Concatenated source of every guide on shardd.xyz, in sidebar order. Generated at build time; this file is the same markdown the site renders. Drop into an LLM context window for one-shot integration help.",
+      "",
+    ];
+    for (const f of files) {
+      const slug = f.replace(/\.md$/, "");
+      const md = await readFile(join(guideSrc, f), "utf8");
+      const title = (md.match(/^#\s+(.+)$/m)?.[1] ?? slug).trim();
+      indexLines.push(
+        `- [${title}](https://shardd.xyz/guide/${slug}.md)`,
+      );
+      fullParts.push(
+        `---`,
+        ``,
+        `# ${title}`,
+        ``,
+        `Source: https://shardd.xyz/guide/${slug}`,
+        ``,
+        md.replace(/^#\s+.+\n+/, "").trim(),
+        ``,
+      );
+    }
+    await writeFile(
+      join(siteConfig.outDir, "llms.txt"),
+      indexLines.join("\n") + "\n",
+    );
+    await writeFile(
+      join(siteConfig.outDir, "llms-full.txt"),
+      fullParts.join("\n") + "\n",
+    );
   },
 });

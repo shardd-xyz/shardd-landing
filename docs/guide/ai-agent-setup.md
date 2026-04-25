@@ -98,3 +98,19 @@ References:
 1. Grab an API key at [app.shardd.xyz/dashboard/keys](https://app.shardd.xyz/dashboard/keys) and have it ready.
 2. Have the project open in your agent's working tree.
 3. After it runs, see the [Quickstart](/guide/quickstart) for the full per-language method surface and the [SDKs](/guide/sdks) page for package coordinates and failover details.
+
+## Programmatic access (for LLMs)
+
+Every doc page on this site is also served as raw markdown — append `.md` to any `/guide/<slug>` URL:
+
+- [`/guide/quickstart.md`](/guide/quickstart.md)
+- [`/guide/sdks.md`](/guide/sdks.md)
+- [`/guide/ai-agent-setup.md`](/guide/ai-agent-setup.md)
+- [`/guide/public-edge-clients.md`](/guide/public-edge-clients.md)
+
+Two roll-ups for one-shot ingestion into an LLM context:
+
+- [`/llms.txt`](/llms.txt) — llmstxt.org-style index with one link per page.
+- [`/llms-full.txt`](/llms-full.txt) — every guide concatenated as raw markdown.
+
+Each docs page also has a **copy as markdown** button at the top — same content, one click.
