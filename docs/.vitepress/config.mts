@@ -1,6 +1,6 @@
 import { defineConfig } from "vitepress";
 import { execSync } from "node:child_process";
-import { readFile, writeFile, copyFile, readdir, mkdir } from "node:fs/promises";
+import { readFile, writeFile, copyFile, readdir, mkdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 
 // Resolve the commit hash at build time so the footer can link to the
@@ -159,5 +159,67 @@ export default defineConfig({
       join(siteConfig.outDir, "llms-full.txt"),
       fullParts.join("\n") + "\n",
     );
+
+    // 3) Emit /sitemap.xml + /robots.txt at the site root for search
+    //    indexers. Lastmod uses each markdown file's mtime; the
+    //    homepage uses the most recent mtime across docs/index.md +
+    //    SdHome.vue + custom.css since those are what the home page
+    //    actually renders from.
+    const homeInputs = [
+      join(siteConfig.srcDir, "index.md"),
+      join(siteConfig.srcDir, ".vitepress/theme/SdHome.vue"),
+      join(siteConfig.srcDir, ".vitepress/theme/custom.css"),
+    ];
+    let homeMtime = 0;
+    for (const p of homeInputs) {
+      try {
+        const s = await stat(p);
+        if (s.mtimeMs > homeMtime) homeMtime = s.mtimeMs;
+      } catch {
+        /* ignore missing */
+      }
+    }
+    const isoDate = (ms: number) =>
+      new Date(ms || Date.now()).toISOString().slice(0, 10);
+
+    type SitemapEntry = {
+      loc: string;
+      lastmod: string;
+      changefreq: string;
+      priority: string;
+    };
+    const entries: SitemapEntry[] = [
+      {
+        loc: "https://shardd.xyz/",
+        lastmod: isoDate(homeMtime),
+        changefreq: "weekly",
+        priority: "1.0",
+      },
+    ];
+    for (const f of files) {
+      const slug = f.replace(/\.md$/, "");
+      const s = await stat(join(guideSrc, f));
+      entries.push({
+        loc: `https://shardd.xyz/guide/${slug}`,
+        lastmod: isoDate(s.mtimeMs),
+        changefreq: "weekly",
+        priority: slug === "introduction" || slug === "quickstart" ? "0.9" : "0.8",
+      });
+    }
+    const sitemap =
+      `<?xml version="1.0" encoding="UTF-8"?>\n` +
+      `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n` +
+      entries
+        .map(
+          (e) =>
+            `  <url>\n    <loc>${e.loc}</loc>\n    <lastmod>${e.lastmod}</lastmod>\n    <changefreq>${e.changefreq}</changefreq>\n    <priority>${e.priority}</priority>\n  </url>`,
+        )
+        .join("\n") +
+      `\n</urlset>\n`;
+    await writeFile(join(siteConfig.outDir, "sitemap.xml"), sitemap);
+
+    const robots =
+      `User-agent: *\nAllow: /\n\nSitemap: https://shardd.xyz/sitemap.xml\n`;
+    await writeFile(join(siteConfig.outDir, "robots.txt"), robots);
   },
 });
