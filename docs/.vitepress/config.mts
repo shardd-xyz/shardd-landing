@@ -179,8 +179,16 @@ export default defineConfig({
         /* ignore missing */
       }
     }
-    const isoDate = (ms: number) =>
-      new Date(ms || Date.now()).toISOString().slice(0, 10);
+    // Full W3C-datetime form (YYYY-MM-DDThh:mm:ss+00:00). Date-only is
+    // technically valid per the sitemap spec, but a few stricter
+    // validators (incl. some Google Search Console fetch paths) have
+    // historically been finicky with bare YYYY-MM-DD; full ISO 8601
+    // is the safe choice.
+    const isoDate = (ms: number) => {
+      const d = new Date(ms || Date.now());
+      // Trim milliseconds and force UTC offset notation.
+      return d.toISOString().replace(/\.\d{3}Z$/, "+00:00");
+    };
 
     type SitemapEntry = {
       loc: string;
